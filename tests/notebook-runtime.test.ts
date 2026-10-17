@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setImmediate } from "node:timers/promises";
-import { NotebookRuntime } from "../lib/notebook/runtime.ts";
+import { NotebookRuntime, parseRunResult } from "../lib/notebook/runtime.ts";
 import type { RuntimeRow } from "../lib/notebook/types.ts";
 import { resultPath } from "../lib/notebook/wrapper.ts";
 import { ColabClient } from "../lib/colab/client.ts";
@@ -17,6 +17,20 @@ const row: RuntimeRow = { id: crypto.randomUUID(), notebook_id: notebookId, note
   requested_compute: "CPU", selected_accelerator: "CPU", machine_kind: "CPU", compute_verified: 1 };
 const payload = { protocol: 1, runId, status: "ok", outputs: [{ output_type: "stream", name: "stdout", text: "42\n" }],
   startedAt: 100, finishedAt: 200, executionCount: 1, truncated: false };
+
+test("runtime result parsing drops oversized PNGs while preserving text and valid PNGs", () => {
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const oversized = Buffer.from(png, "base64");
+  oversized.writeUInt32BE(20000, 16); oversized.writeUInt32BE(20000, 20);
+  for (const image of [oversized.toString("base64"), "iVBORw0KGgoAAAAA", png]) {
+    const data = { "text/plain": "image description", "image/png": image };
+    const parsed = parseRunResult(JSON.stringify({ ...payload,
+      outputs: [{ output_type: "display_data", data }] }), runId);
+    assert.deepEqual(parsed.outputs, [{ output_type: "display_data", metadata: {},
+      data: image === png ? data : { "text/plain": "image description" } }]);
+  }
+});
+
 class Socket extends EventTarget {
   closed = false; sent = "";
   constructor(readonly unknown = false) { super(); }

@@ -17,7 +17,7 @@
     "build:ui": "node scripts/build-notebook-ui.mjs",
     "dev:ui": "node --experimental-transform-types scripts/notebook-ui-dev.mts",
     "configure": "node scripts/configure.mjs",
-    "test:setup": "node --test tests/configure.test.mjs",
+    "test:setup": "node --test tests/configure.test.mjs tests/audit-public.test.mjs",
     "check": "npm run test:setup && npm test && npm run typecheck",
     "audit:public": "node scripts/audit-public.mjs"
   },

@@ -2,6 +2,8 @@
 
 這是單 owner 私人部署。Sites 控制存取，後端另外把資料綁定到該 Site 的 owner。開放給多個人或公開網際網路不是此版本支援的部署方式。
 
+開發預覽的 `managed-linux` 模式會綁定 `0.0.0.0`，並信任平台注入的 `oai-authenticated-user-*` headers。只有平台保證「僅已驗證的 proxy 能連到該 port」時才能使用；Host 白名單不是身分驗證。其他環境使用 `portable` 模式：只綁定 `127.0.0.1`，由本機 mock auth 移除外來身分 headers，再提供本機測試身分。
+
 資料流與保存位置：
 
 - Google client secret 與加密金鑰：自己的 Site secrets。

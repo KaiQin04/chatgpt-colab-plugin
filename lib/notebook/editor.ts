@@ -113,6 +113,17 @@ function editorBrowser(mode: "site" | "mcp", siteOrigin: string): void {
     if (!failure(v)) note(`已更新 ${new Date().toLocaleTimeString("zh-TW")}`);
   }
   const text = (parent: HTMLDivElement, value: string, tag = "pre") => { const node = document.createElement(tag) as unknown as HTMLSpanElement; node.textContent = value; parent.appendChild(node); return node; };
+  // Equivalent to png.ts; this function is serialized without module imports.
+  function base64PngWithinLimits(value: string): boolean {
+    try {
+      const bytes = Uint8Array.from(atob(value.replace(/[\r\n]/g, "").slice(0, 32)), (char) => char.charCodeAt(0));
+      if (bytes.length < 24 || ![137, 80, 78, 71, 13, 10, 26, 10].every((byte, index) => bytes[index] === byte)) return false;
+      const view = new DataView(bytes.buffer);
+      if (view.getUint32(8) !== 13 || view.getUint32(12) !== 0x49484452) return false;
+      const width = view.getUint32(16), height = view.getUint32(20);
+      return width > 0 && height > 0 && width <= 4096 && height <= 4096 && width * height <= 4_000_000;
+    } catch { return false; }
+  }
   function output(parent: HTMLDivElement, run: Value, version: number): void {
     text(parent, `${state(run.state)} · 來源版本 ${run.cellVersion}${run.cellVersion !== version ? "（程式碼已修改）" : ""} · ${run.actor === "user" ? "使用者" : "ChatGPT"} · run ${String(run.id).slice(0, 8)}`, "small");
     if (run.interruptRequested) text(parent, "已要求中斷，以後續 terminal 結果為準。", "small");
@@ -129,7 +140,7 @@ function editorBrowser(mode: "site" | "mcp", siteOrigin: string): void {
       else if (object(item.data)) {
         if (typeof item.data["text/plain"] === "string") text(parent, item.data["text/plain"].slice(0, 24_000));
         const png = item.data["image/png"];
-        if (typeof png === "string" && png.length <= 24_000 && /^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png)) {
+        if (typeof png === "string" && png.length <= 24_000 && /^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png) && base64PngWithinLimits(png)) {
           const image = document.createElement("img"); image.alt = "Cell 圖片輸出"; image.src = `data:image/png;base64,${png}`; parent.appendChild(image);
         }
       }

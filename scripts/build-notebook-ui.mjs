@@ -24,7 +24,7 @@ export function uiSourceHash() {
     }
   };
   walk(uiDir);
-  files.push(join(root, "lib/notebook/client.ts"), join(root, "lib/notebook/contract.ts"));
+  files.push(join(root, "lib/notebook/client.ts"), join(root, "lib/notebook/contract.ts"), join(root, "lib/notebook/png.ts"));
   const hash = createHash("sha256");
   for (const path of files) hash.update(relative(root, path)).update("\0").update(readFileSync(path)).update("\0");
   return hash.digest("hex");

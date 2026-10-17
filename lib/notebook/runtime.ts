@@ -18,6 +18,7 @@ import { inputWrapper } from "./input-wrapper.ts";
 import { parseSetupResult, setupPath } from "./setup.ts";
 import type { SetupResult, SetupRow } from "./setup.ts";
 import { setupWrapper } from "./setup-wrapper.ts";
+import { base64PngWithinLimits } from "./png.ts";
 
 const AGENT = "colab-compute-mcp";
 interface Socket extends EventTarget { accept(): void; send(value: string): void; close(code?: number, reason?: string): void }
@@ -56,7 +57,7 @@ export function parseRunResult(raw: unknown, runId: string): RunResult {
       if (Object.hasOwn(item.data, "image/png")) {
         const png = text(item.data["image/png"]);
         // PNG only, never SVG/HTML/remote resource URLs.
-        if (/^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png)) data["image/png"] = png;
+        if (/^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png) && base64PngWithinLimits(png)) data["image/png"] = png;
       }
       return { output_type: "display_data", data, metadata: {} };
     }

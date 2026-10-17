@@ -3,6 +3,7 @@ import { memo } from "react";
 import { useI18n } from "../app/Locale.tsx";
 import type { CellView, FullCellView, RunView } from "../../lib/notebook/contract.ts";
 import type { RunResult } from "../../lib/notebook/types.ts";
+import { base64PngWithinLimits } from "../../lib/notebook/png.ts";
 import { renderMarkdown } from "../app/markdown.ts";
 import { isTransientPollError } from "../app/polling.ts";
 import { ansiSpans, formatAgo, formatDuration, lineDiff } from "../app/text.ts";
@@ -34,7 +35,7 @@ function Outputs({ result }: { result: RunResult }) {
         </div>;
       }
       const png = output.data["image/png"];
-      if (typeof png === "string" && /^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png)) {
+      if (typeof png === "string" && /^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png) && base64PngWithinLimits(png)) {
         return <img key={index} alt={t("Cell image output")} src={`data:image/png;base64,${png}`} />;
       }
       const text = output.data["text/plain"];

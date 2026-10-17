@@ -23,10 +23,11 @@ test("bundled UI is one self-contained document with a single mode slot", () => 
   assert.ok(html.length < 1_000_000, `bundle too large: ${html.length}`);
 });
 
-test("UI responses keep the original inline-only CSP and no-store headers", () => {
+test("Site UI responses allow only same-origin framing and retain no-store headers", () => {
   const response = htmlResponse("<!doctype html>");
   assert.equal(response.headers.get("Content-Security-Policy"),
-    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'");
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'");
+  assert.equal(response.headers.get("X-Frame-Options"), "SAMEORIGIN");
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
   assert.equal(response.headers.get("Content-Type"), "text/html; charset=utf-8");

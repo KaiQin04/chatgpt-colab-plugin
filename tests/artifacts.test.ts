@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setImmediate } from "node:timers/promises";
 import { ArtifactStore, artifactManifest, artifactPath } from "../lib/notebook/artifact-store.ts";
-import { archiveRun, hex } from "../lib/notebook/artifacts.ts";
+import { archiveRun, hex, previewArtifact } from "../lib/notebook/artifacts.ts";
 import { notebookCall, maintenanceCall } from "../lib/notebook/service.ts";
 import { NotebookStore } from "../lib/notebook/store.ts";
 import { artifactDownload } from "../lib/notebook/download.ts";
 import { maintenanceApi } from "../lib/notebook/maintenance-api.ts";
 import { CPU_IDLE_MS, GPU_IDLE_MS, ARTIFACT_RETENTION_MS, DOWNLOAD_TTL_MS, effectiveIdlePolicy, idleDue } from "../lib/notebook/policy.ts";
 import { validateNotebookArguments } from "../lib/notebook/tools.ts";
-import type { ArtifactManifest, RunResult, RuntimeRow } from "../lib/notebook/types.ts";
+import type { ArtifactManifest, ArtifactRow, RunResult, RuntimeRow } from "../lib/notebook/types.ts";
+import type { SpikeEnv } from "../lib/platform/config.ts";
 import { encryptToken } from "../lib/platform/security.ts";
 import { Store } from "../lib/platform/store.ts";
 import { SITE_ORIGIN } from "../lib/platform/config.ts";
@@ -17,6 +18,22 @@ import { fixture, noNetwork, OTHER, OWNER, ownerRequest, REFRESH, syntheticCompu
 
 const notebookId = "11111111-1111-4111-8111-111111111111";
 const cellId = "22222222-2222-4222-8222-222222222222";
+
+test("artifact previews require a bounded PNG header even when the stored hash matches", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  for (const change of ["valid", "signature", "IHDR", "size"]) {
+    const data = new Uint8Array(png);
+    if (change === "signature") data[0] = 0;
+    if (change === "IHDR") data[12] = 0;
+    if (change === "size") new DataView(data.buffer).setUint32(16, 20000);
+    const row = { size: data.length, media_type: "image/png", object_key: "synthetic-preview",
+      sha256: hex(await crypto.subtle.digest("SHA-256", data)) } as ArtifactRow;
+    const env = { BUCKET: { get: async () => ({ size: data.length, arrayBuffer: async () => data.buffer }) } } as unknown as SpikeEnv;
+    const preview = await previewArtifact(env, row, new AbortController().signal);
+    assert.equal(preview, change === "valid" ? `data:image/png;base64,${png.toString("base64")}` : null);
+  }
+});
+
 class Bucket {
   files = new Map<string, { data: Uint8Array<ArrayBuffer>; sha256: ArrayBuffer; customMetadata: Record<string, string> }>();
   puts = 0; deletes = 0; failPut = false;

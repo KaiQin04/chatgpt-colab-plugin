@@ -7,6 +7,7 @@ import { MAX_PREVIEW_BYTES } from "./policy.ts";
 import type { NotebookRuntime } from "./runtime.ts";
 import type { ArtifactRow, RunResult, RunRow, RuntimeRow } from "./types.ts";
 import type { ArtifactView } from "./contract.ts";
+import { pngHeaderWithinLimits } from "./png.ts";
 
 export const hex = (data: ArrayBuffer) => [...new Uint8Array(data)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 export function mediaType(data: Uint8Array): string {
@@ -78,9 +79,6 @@ export async function previewArtifact(env: SpikeEnv, row: ArtifactRow, signal: A
     throw new SpikeError("artifact_storage_readback_mismatch", "artifacts");
   }
   // Bound decoded image memory as well as compressed bytes; never decode SVG/HTML.
-  if (data.byteLength < 24) return null;
-  const dimensions = new DataView(data);
-  const width = dimensions.getUint32(16), height = dimensions.getUint32(20);
-  if (!width || !height || width > 4096 || height > 4096 || width * height > 4_000_000) return null;
+  if (!pngHeaderWithinLimits(new Uint8Array(data))) return null;
   return `data:${row.media_type};base64,${base64(new Uint8Array(data))}`;
 }
