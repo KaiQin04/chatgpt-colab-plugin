@@ -10,6 +10,27 @@ Each user deploys a separate private backend, connects their own Google account 
 
 > Unofficial, experimental integration. Not affiliated with Google or OpenAI. This repository is a self-deployment template, not a plugin already listed in the public directory.
 
+## Screenshots
+
+Local demo with sample data and simulated compute values; no Google account or Colab credits were used for these screenshots.
+
+**English notebook editor — code, output, and manual execution attribution.**
+
+![English notebook editor showing code, output and Run by you](docs/images/notebook-en.jpg)
+
+<details>
+<summary>Home page and Traditional Chinese interface</summary>
+
+**Home — choose a notebook name and machine.**
+
+![Notebook home page with language selection and compute overview](docs/images/home-en.jpg)
+
+**Traditional Chinese — switch the interface language from the toolbar.**
+
+![Traditional Chinese notebook editor with the package sidebar](docs/images/notebook-zh-TW.jpg)
+
+</details>
+
 ## What you can do
 
 - Run Python on your Colab CPU or an eligible GPU from ChatGPT.

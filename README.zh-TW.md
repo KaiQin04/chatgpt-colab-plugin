@@ -8,6 +8,27 @@
 
 **非 Google 或 OpenAI 官方產品。此 repo 是可自行部署的實驗性整合，不是已上架的公開 Plugin，也不是共用運算服務。**
 
+## 介面預覽
+
+以下為本機示範資料與模擬運算數值，截圖未使用 Google 帳號或 Colab 額度。
+
+**繁體中文編輯器：程式碼、輸出與套件側欄。**
+
+![繁體中文 Notebook 編輯器與套件側欄](docs/images/notebook-zh-TW.jpg)
+
+<details>
+<summary>查看首頁與英文介面</summary>
+
+**首頁：輸入 Notebook 名稱並選擇機型。**
+
+![Notebook 首頁的語言切換、運算資訊與建立表單](docs/images/home-en.jpg)
+
+**英文編輯器：切換語言後仍保留程式碼與輸出。**
+
+![英文 Notebook 編輯器顯示程式碼、輸出與 Run by you](docs/images/notebook-en.jpg)
+
+</details>
+
 ## 你會得到什麼
 
 - 私人 Notebook 編輯器：程式碼、Markdown、Shift＋Enter、輸出與版本衝突處理。
