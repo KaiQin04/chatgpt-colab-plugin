@@ -1,5 +1,7 @@
 # 自己的 Google OAuth
 
+[English](OAUTH.en.md) | [繁體中文](OAUTH.md)
+
 OAuth 用瀏覽器登入取得 token；使用者不需手動貼 token。每位部署者仍需建立自己的 **OAuth client ID／client secret**，它們用來識別應用程式，與使用者授權後取得的 access／refresh token 不同。
 
 ## 設定步驟

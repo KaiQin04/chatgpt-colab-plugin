@@ -4,6 +4,7 @@ import { SITE_ORIGIN } from "../lib/platform/config.ts";
 import { mcpPost } from "../lib/mcp/transport.ts";
 import { TOOLS } from "../lib/mcp/registry.ts";
 import { PANEL_URI, PANEL_MIME } from "../lib/notebook/panel.ts";
+import { NOTEBOOK_UI_SOURCE_HASH } from "../lib/notebook/ui-bundle.generated.ts";
 import { fixture, noNetwork, OTHER, OWNER } from "./helpers.ts";
 
 interface RpcResponse {
@@ -18,6 +19,10 @@ interface RpcResponse {
       _meta: { ui: { csp: { connectDomains: string[] } } } }[];
   };
 }
+
+test("panel resource URI versions the UI so hosts do not reuse a stale editor", () => {
+  assert.equal(PANEL_URI, `ui://colab-spike/panel-${NOTEBOOK_UI_SOURCE_HASH.slice(0, 16)}.html`);
+});
 
 function rpc(method: string, params: unknown = {}, owner: typeof OWNER | null = OWNER) {
   return new Request(`${SITE_ORIGIN}/mcp`, { method: "POST", headers: {

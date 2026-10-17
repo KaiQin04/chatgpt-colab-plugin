@@ -1,15 +1,24 @@
 # chatgpt-colab-plugin
 
-在 ChatGPT 中編輯及執行自己的 Colab Notebook。每位使用者部署自己的私人後端、設定自己的 Google OAuth，並使用自己的 Colab 帳號與運算額度。
+**Run Colab notebooks in ChatGPT using your own Colab compute credits.**
 
-**非 Google 或 OpenAI 官方產品。此 repo 是可自行部署的實驗性整合，不是已上架的公開 Plugin，也不是共用運算服務。**
+[English](README.md) | [繁體中文](README.zh-TW.md)
 
-## 你會得到什麼
+Write, edit, and run Python notebooks from your ChatGPT conversation. Execution happens on **your Google Colab runtime**, using the resources and compute credits available to **your own Colab account**. Edit cells yourself, press **Shift + Enter**, or ask ChatGPT to work with the notebook.
 
-- 私人 Notebook 編輯器：程式碼、Markdown、Shift＋Enter、輸出與版本衝突處理。
-- ChatGPT MCP 工具：開啟 notebook、編輯與執行 cell、匯入附件、匯出 `.ipynb`、下載成品。
-- 自有 Google OAuth：瀏覽器授權，不需手動複製 access token 或 refresh token。
-- 自有 Site、D1 資料庫、R2 成品儲存與私人 Plugin；repo 作者不代管你的帳號或後端。
+Each user deploys a separate private backend, connects their own Google account through OAuth, and installs their own private plugin. You do not share the maintainer's Site, credentials, or compute credits.
+
+> Unofficial, experimental integration. Not affiliated with Google or OpenAI. This repository is a self-deployment template, not a plugin already listed in the public directory.
+
+## What you can do
+
+- Run Python on your Colab CPU or an eligible GPU from ChatGPT.
+- Edit code and Markdown cells, execute with Shift + Enter, and inspect outputs.
+- Ask ChatGPT to create, edit, and run cells through MCP tools.
+- Import attachments, export `.ipynb` notebooks, and download generated artifacts.
+- Sign in to Google with OAuth—no manual access-token or refresh-token copying.
+
+**Bring your own Colab account and compute credits.** This project does not provide extra credits, guarantee GPU availability, or transfer your Colab subscription to OpenAI. Available hardware, usage limits, and charges remain subject to your Colab account and Google's policies.
 
 ```text
 Your ChatGPT / Codex
@@ -19,24 +28,24 @@ Your private Site + MCP + D1 + R2
 Your Google OAuth client -> Your Google account -> Your Colab runtime
 ```
 
-## 開始使用
+## Get started
 
-第一版支援 **ChatGPT Sites 私人部署**。你需要可建立 Site、使用 Sites Plugin 的帳號，以及自己的 Google Cloud 專案與 Colab 帳號。這不代表完全自行管理伺服器：後端由 Sites 平台代管，但每人有獨立實例。
+The initial deployment target is an **owner-private ChatGPT Site**. You need access to Sites and its plugin, your own Google Cloud project for OAuth, and a Colab account. Sites hosts your individual backend; this is not a generic VPS or Cloudflare Workers deployment.
 
-1. Clone 本 repo；不要沿用別人的 Site 或 Google OAuth client。
-2. 依 [部署指南](docs/DEPLOYMENT.md) 建立自己的私人 Site。
-3. 依 [OAuth 指南](docs/OAUTH.md) 設定 Google Web client，在自己的瀏覽器完成授權。
-4. 安裝／連接 Sites 為你建立的私人 Plugin。
+1. Clone this repository and choose a release.
+2. Follow the [deployment guide](docs/DEPLOYMENT.en.md) to create your own private Site.
+3. Follow the [Google OAuth guide](docs/OAUTH.en.md) and authorize your account in your browser.
+4. Install or connect the private plugin that Sites creates for your deployment.
 
-可以把以下要求交給有 Sites 能力的 agent：
+You can ask an agent with Sites access to guide you:
 
-> 請讀取這個 repo 的 AGENTS.md、docs/DEPLOYMENT.md 和 skills/setup/SKILL.md，幫我部署到新建、僅本人可存取的 ChatGPT Site，設定我自己的 Google OAuth 並連接私人 Plugin。憑證由我在設定介面輸入，不貼進對話。先完成不啟動 runtime 的檢查。
+> Read this repository's AGENTS.md, docs/DEPLOYMENT.en.md, docs/OAUTH.en.md, and skills/setup/SKILL.md. Deploy it to a new ChatGPT Site that only I can access, help me configure my own Google OAuth client, and connect my private plugin. I will enter credentials in the settings UI, not in chat. Start with checks that do not allocate a Colab runtime.
 
-Google 帳號授權與必要的設定仍需本人完成。這不是安裝後零設定的商店 Plugin。第一版不支援直接部署到一般 Cloudflare Worker 或任意 VPS；它依賴 Sites 的身分驗證邊界。
+Setup requires your participation in Google account authorization. A public directory installation does not automatically deploy a private backend for you. The notebook UI currently uses Traditional Chinese; the README and setup guides are available in English and Traditional Chinese.
 
-## 本機開發與驗證
+## Local development
 
-需要 Node.js 22.13+、npm、uv（Python 測試環境）。
+Requires Node.js 22.13+, npm, and uv for the Python test environment.
 
 ```sh
 git clone https://github.com/KaiQin04/chatgpt-colab-plugin.git
@@ -50,22 +59,26 @@ npm run check
 npm run build
 ```
 
-`npm run dev:ui` 在 localhost 啟動合成資料預覽，不會連線 Google 或使用 Colab 額度。Python harness 使用本專案 `.venv/bin/python`；也可設定 `NOTEBOOK_TEST_PYTHON`。沒有 Python 時部分測試會跳過，不能當成完整驗證通過。
+`npm run dev:ui` starts a localhost preview with synthetic data. It does not connect to Google or consume Colab credits. Python harnesses use `.venv/bin/python`, or the interpreter specified by `NOTEBOOK_TEST_PYTHON`. Missing Python can cause skipped tests; that is not a complete validation pass.
 
-## 版本與維護方式
+## Releases and upgrades
 
-**主要開發在維護者的私人 repo；這個公開 repo 用來釋出經檢查的穩定版本。** 功能與修正先在私人開發來源驗證，再匯出已清理的程式到本 repo。公開 repo 不包含私人 Git 歷史、部署設定、憑證或驗收資料。「穩定版本」是發布流程的分流，不代表 Colab 非公開 API 有穩定性保證。
+The maintainer develops features in a private source repository and publishes reviewed, sanitized versions here. This public repository does not include private Git history, deployment settings, credentials, or user data. “Stable release” describes the release workflow; it does not promise stability of Colab's unversioned endpoints.
 
-其他 agent 請先讀 [AGENTS.md](AGENTS.md)。日常功能不需要在兩個 repo 各寫一次。公開發布、使用者升級與維護者私人 Site 部署是三個獨立動作；公開版更新不會自動替任何人部署。升級請看 [版本與發布流程](docs/RELEASING.md)。
+Publishing a release does **not** update anyone's deployed Site. For upgrades, open your existing Site source through the Sites workflow, apply the selected release, and preserve your own `.openai/hosting.json`, `lib/platform/deployment.ts`, secrets, database, and storage. Review migrations, run checks, and deploy to the same private Site. Back up required notebooks and artifacts first. There is no automatic updater.
 
-## 使用限制
+Agents should read [AGENTS.md](AGENTS.md). Detailed maintainer release instructions are in [docs/RELEASING.md](docs/RELEASING.md) (Traditional Chinese).
 
-此整合使用 Colab 的未版本化端點，可能隨時改變。Google OAuth 可以成功，不等於 Google 已核准此第三方整合或公開提供 Colab 存取。請先閱讀 [Google OAuth 與 Colab 限制](docs/OAUTH.md#限制與審核)。不要把自己的 Site 開放給其他人共用運算或憑證。
+## Limits and validation
 
-Colab 的 GPU 可用性、額度與費用取決於你自己的帳號。開啟 runtime 才可能消耗額度；使用完請關閉並確認釋放。關閉瀏覽器或解除 Google 授權不代表 runtime 已停止。
+This integration uses unversioned Colab endpoints that may change. A successful OAuth flow is not approval from Google for a third-party integration. Read the [OAuth and Colab limitations](docs/OAUTH.en.md#limits-and-review) before deploying. Keep your Site private to yourself; do not offer other people access to your credentials or Colab runtime.
 
-本版可驗證範圍與未測項目見 [驗證紀錄](docs/VALIDATION.md)。資料位置與回報方式見 [SECURITY.md](SECURITY.md)。
+Stop runtimes when finished and verify that they have been released. Closing the browser, uninstalling the plugin, or revoking OAuth does not itself stop a runtime.
 
-## 授權
+The current release passed 105 application tests, 2 deployment-configuration tests, type checking, and a production build. Manual Shift + Enter attribution was verified on the maintainer's existing private Site. A complete deployment and OAuth flow using a fresh third-party account has **not** yet been verified. See [validation details](docs/VALIDATION.en.md), including the embedded-panel execution limitation.
 
-[MIT](LICENSE)。第三方元件的原始授權保留在 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。ChatGPT、OpenAI、Google、Colab 名稱僅用於描述相容服務，不表示官方背書。
+Google secrets stay in your Site settings; encrypted refresh tokens and notebook records are stored in your D1 database, and saved artifacts in your R2 bucket. Code and imported files go to Colab; tool outputs may also enter your ChatGPT conversation. Google and OpenAI still process data. Do not upload credentials or data you are not authorized to share. See [SECURITY.md](SECURITY.md) for reporting guidance (Traditional Chinese).
+
+## License
+
+[MIT](LICENSE). Original third-party licenses are retained in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). ChatGPT, OpenAI, Google, and Colab names describe compatible services and do not imply endorsement.

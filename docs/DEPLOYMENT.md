@@ -1,5 +1,7 @@
 # 部署到自己的私人 Site
 
+[English](DEPLOYMENT.en.md) | [繁體中文](DEPLOYMENT.md)
+
 ## 前置條件
 
 - 可建立私人 ChatGPT Site 的帳號，已安裝 Sites Plugin；不同帳號的可用功能可能不同。

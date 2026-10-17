@@ -1,6 +1,9 @@
 /** MCP Apps panel: the bundled notebook UI using the host postMessage bridge. */
 import { notebookUiHtml } from "./ui.ts";
-export const PANEL_URI = "ui://colab-spike/panel.html";
+import { NOTEBOOK_UI_SOURCE_HASH } from "./ui-bundle.generated.ts";
+// Hosts may retain a rendered resource across deployments despite zero TTL.
+// A new UI build must get a new resource URI, while unchanged builds stay stable.
+export const PANEL_URI = `ui://colab-spike/panel-${NOTEBOOK_UI_SOURCE_HASH.slice(0, 16)}.html`;
 export const PANEL_MIME = "text/html;profile=mcp-app";
 export const PANEL_HTML = notebookUiHtml("mcp");
 

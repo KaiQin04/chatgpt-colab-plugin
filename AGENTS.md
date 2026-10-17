@@ -19,7 +19,7 @@
 
 ## 修改與驗證
 
-- 說明文件使用繁體中文；程式碼與識別字使用英文。先找既有 scripts，不猜 target。
+- 公開首頁 README.md 使用英文，README.zh-TW.md 保留繁體中文；部署與 OAuth 指南維持中英互相連結。核心介紹是「Run Colab notebooks in ChatGPT using your own Colab compute credits.」不得把英文文件改回僅中文。程式碼與識別字使用英文。先找既有 scripts，不猜 target。
 - npm ci、npm ci --prefix ui；Python 使用本 repo .venv 或明確的 NOTEBOOK_TEST_PYTHON，不用全域 Python 環境。
 - 修改 ui/、lib/notebook/client.ts 或 contract.ts 後，執行 npm run build:ui。生成檔需一起提交。
 - 執行 npm run check 與 npm run build；對外發布另執行 npm run audit:public。Golden 只能針對預期變更更新並檢查差異；不得藉更新 golden 掩蓋未知回歸。
