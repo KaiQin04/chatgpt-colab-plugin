@@ -2,6 +2,14 @@
 
 [English](VALIDATION.en.md) | [繁體中文](VALIDATION.md)
 
+## v0.2.0（2026-10-17）
+
+- 新增 English／繁體中文介面、瀏覽器語言預設、手動切換與瀏覽器偏好儲存。
+- 公開版 109 個應用測試與 2 個設定測試通過，無 skipped tests；typecheck、UI bundle 與 production build 通過。
+- 新測試覆蓋語言優先順序、英文 fallback、無效／受限 storage、插值保留、錯誤與時間格式。
+- 本機合成環境實際操作：預設繁體中文、切到英文後重新整理仍為英文、切換不遺失編輯內容或輸出、Shift＋Enter 顯示雙語對應的手動執行者、側欄與確認對話框、640px 面板無水平溢出。
+- 本次沒有配置真實 Colab runtime，也沒有部署既有私人 Site。語言功能的 MCP 嵌入面板、全新第三方帳號部署及 Google OAuth 尚未另做線上驗收。
+
 ## v0.1.1（2026-10-17）
 
 - 105 個應用測試與 2 個設定測試通過，沒有 skipped tests；型別檢查、UI bundle 重建及 production build 通過。

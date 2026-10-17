@@ -12,7 +12,7 @@
 
 ## 1. 取得版本
 
-Clone 本 repo，選擇維護者標記的版本，例如 `git switch --detach v0.1.0`。公共模板不得包含任何現有 Site ID、OAuth secret 或私人資料。
+Clone 本 repo，選擇維護者標記的版本，例如 `git switch --detach v0.2.0`。公共模板不得包含任何現有 Site ID、OAuth secret 或私人資料。
 
 安裝依賴並驗證：
 
@@ -77,7 +77,9 @@ npm run configure -- --site-url https://YOUR-SITE.chatgpt.site --project-id appg
 
 先開啟 panel／讀取 runtime settings，確認沒有建立 Colab runtime。Google 授權完成後，可讀取餘額與可用機型；這不代表所有機型均可配置。
 
-只有在本人同意使用額度後才做真實測試：開啟一台 CPU、執行 `print(1 + 2)`、下載 `.ipynb`、確認成品可讀，再關閉 runtime 並查核已釋放。Shift＋Enter 的新執行應顯示「由你執行」，助理發起的執行應顯示「由 ChatGPT 執行」。舊紀錄不會被重寫。
+介面支援 English／繁體中文。首次依瀏覽器偏好順序選擇支援語言，無符合項目時使用英文；可從首頁或編輯器工具列切換。已儲存的選擇優先，瀏覽器禁止儲存時仍可在當次面板使用選定語言。
+
+只有在本人同意使用額度後才做真實測試：開啟一台 CPU、執行 `print(1 + 2)`、下載 `.ipynb`、確認成品可讀，再關閉 runtime 並查核已釋放。Shift＋Enter 的新執行應顯示「由你執行／Run by you」，助理發起的執行應顯示「由 ChatGPT 執行／Run by ChatGPT」。舊紀錄不會被重寫。
 
 背景閒置清理需要另設 Sites 的 recurring update，不能只靠關閉網頁。請按目前 skill 建立至少每小時一次的私人 service-access POST `/api/maintenance`，JSON body 為 `{}`；憑證不能寫進排程文字。未設定排程時，明確保留手動關閉責任；即使有排程也不是精確到期保證。
 

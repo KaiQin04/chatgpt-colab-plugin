@@ -65,26 +65,27 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))} 毫秒`;
+export function formatDuration(ms: number, locale: "en" | "zh-TW" = "zh-TW"): string {
+  const english = locale === "en";
+  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ${english ? "ms" : "毫秒"}`;
   const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)} 秒`;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)} ${english ? "sec" : "秒"}`;
   const minutes = Math.floor(seconds / 60), rest = Math.round(seconds % 60);
-  if (minutes < 60) return `${minutes} 分 ${rest} 秒`;
-  return `${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分`;
+  if (minutes < 60) return english ? `${minutes} min ${rest} sec` : `${minutes} 分 ${rest} 秒`;
+  return english ? `${Math.floor(minutes / 60)} hr ${minutes % 60} min` : `${Math.floor(minutes / 60)} 小時 ${minutes % 60} 分`;
 }
 
-export function formatAgo(timestamp: number, now = Date.now()): string {
+export function formatAgo(timestamp: number, now = Date.now(), locale: "en" | "zh-TW" = "zh-TW"): string {
   const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
-  if (seconds < 45) return "剛剛";
+  if (seconds < 45) return locale === "en" ? "just now" : "剛剛";
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} 分鐘前`;
+  if (minutes < 60) return locale === "en" ? `${minutes} minute${minutes === 1 ? "" : "s"} ago` : `${minutes} 分鐘前`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小時前`;
-  return new Date(timestamp).toLocaleDateString("zh-TW", { month: "long", day: "numeric" });
+  if (hours < 24) return locale === "en" ? `${hours} hour${hours === 1 ? "" : "s"} ago` : `${hours} 小時前`;
+  return new Date(timestamp).toLocaleDateString(locale, { month: "long", day: "numeric" });
 }
 
-export function formatNumber(value: number | null | undefined, digits = 2): string {
+export function formatNumber(value: number | null | undefined, digits = 2, locale: "en" | "zh-TW" = "zh-TW"): string {
   return typeof value === "number" && Number.isFinite(value)
-    ? value.toLocaleString("zh-TW", { minimumFractionDigits: 0, maximumFractionDigits: digits }) : "未知";
+    ? value.toLocaleString(locale, { minimumFractionDigits: 0, maximumFractionDigits: digits }) : locale === "en" ? "Unknown" : "未知";
 }

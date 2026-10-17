@@ -1,5 +1,6 @@
 /** Notebook application: document sync, autosave, runs, structure edits and keyboard model. */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { LanguagePicker, useI18n } from "./Locale.tsx";
 import type { CellView, FullCellView, NotebookView, RunView } from "../../lib/notebook/contract.ts";
 import type { ToolResult } from "../../lib/notebook/client.ts";
 import { Cell } from "../components/Cell.tsx";
@@ -40,6 +41,7 @@ export function App(props: {
   api: NotebookApi; siteOrigin: string; openLink(url: string): void;
   onToolResult(listener: (value: ToolResult) => void): () => void;
 }) {
+  const { t, locale } = useI18n();
   const { api } = props;
   const [notebooks, setNotebooks] = useState<NotebookSummary[] | null>(null);
   const [compute, setCompute] = useState<ComputeStatus | null>(null);
@@ -73,7 +75,7 @@ export function App(props: {
   const lastD = useRef(0);
 
   const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
-  const fail = useCallback((error: unknown) => setToast({ text: describe(error), error: true }), []);
+  const fail = useCallback((error: unknown) => setToast({ text: describe(error, locale), error: true }), [locale]);
 
   const setDraft = (cellId: string, draft: Draft | null) => {
     const next = { ...draftsRef.current };
@@ -120,7 +122,7 @@ export function App(props: {
         adopt(result.notebook);
         if (result.warning) {
           const temporary = isTransientPollError(result.warning);
-          pollToast.current = { text: temporary ? "狀態讀取暫時逾時，正在重新確認；不會重複執行。" : describe(new ApiError(result.warning)), error: !temporary };
+          pollToast.current = { text: temporary ? t("Status check timed out. Rechecking without rerunning code.") : describe(new ApiError(result.warning), locale), error: !temporary };
           setToast(pollToast.current);
         } else {
           const previous = pollToast.current;
@@ -130,14 +132,14 @@ export function App(props: {
         return result.notebook;
       } catch (error) {
         const temporary = error instanceof ApiError && isTransientPollError(error.code);
-        pollToast.current = { text: temporary ? "狀態讀取暫時逾時，正在重新確認；不會重複執行。" : describe(error), error: !temporary };
+        pollToast.current = { text: temporary ? t("Status check timed out. Rechecking without rerunning code.") : describe(error, locale), error: !temporary };
         setToast(pollToast.current);
         return null;
       }
       finally { refreshing.current = null; }
     })();
     return refreshing.current;
-  }, [api, adopt]);
+  }, [api, adopt, t, locale]);
 
   const loadHome = useCallback(async () => {
     try { setNotebooks(await api.list()); } catch (error) { fail(error); }
@@ -291,9 +293,9 @@ export function App(props: {
       adopt(result.notebook);
       setSelected(result.notebook.cells[Math.min(index, result.notebook.cells.length - 1)]?.id ?? null);
       setEditing(false);
-      setToast({ text: `已刪除第 ${index + 1} 格`, action: { label: "復原", run: () => { void insert(index, keep.kind, keep.source, false); } } });
+      setToast({ text: t("Deleted cell {number}", { number: index + 1 }), action: { label: t("Undo"), run: () => { void insert(index, keep.kind, keep.source, false); } } });
     } catch (error) { fail(error); if (error instanceof ApiError && error.code === "structure_version_conflict") await refresh(true); }
-  }, [api, adopt, refresh, insert, fail]);
+  }, [api, adopt, refresh, insert, fail, t]);
 
   // ---------- Running ----------
   const runCell = useCallback(async (cellId: string, advance: boolean): Promise<boolean> => {
@@ -310,14 +312,14 @@ export function App(props: {
       if (next) { setSelected(next.id); setEditing(false); }
       else await insert(latest.cells.length);
     };
-    if (!await flush(cellId)) { notify("這一格還有未解決的衝突或儲存失敗，尚未執行", true); return false; }
+    if (!await flush(cellId)) { notify(t("Resolve the conflict or save error before running this cell."), true); return false; }
     if (kind === "markdown") { setEditing(false); await goNext(); return true; }
-    if (notebook.state !== "open") { notify("runtime 尚未開機，先開機才能執行", true); return false; }
+    if (notebook.state !== "open") { notify(t("Start the runtime before running code."), true); return false; }
     const saved = docRef.current!.cells.find((item) => item.id === cellId)!;
     try {
       const result = await api.run({ notebookId: notebook.id, cellId, cellVersion: saved.version, idempotencyKey: crypto.randomUUID() });
       if (result.notebook) adopt(result.notebook as NotebookView);
-      if (result.warning) notify(describe(new ApiError(String(result.warning))), true);
+      if (result.warning) notify(describe(new ApiError(String(result.warning)), locale), true);
       void refresh();
       await goNext();
       return true;
@@ -325,7 +327,7 @@ export function App(props: {
       fail(error);
       return false;
     }
-  }, [api, adopt, refresh, insert, flush, notify, fail]);
+  }, [api, adopt, refresh, insert, flush, notify, fail, t, locale]);
 
   const runMany = useCallback(async (mode: "all" | "from" | "to") => {
     const notebook = docRef.current;
@@ -352,12 +354,12 @@ export function App(props: {
         setRunAll({ total: ids.length, done: position + 1 });
         if (run && run.state !== "ok") {
           const index = docRef.current!.cells.findIndex((cell) => cell.id === cellId);
-          notify(`全部執行停在第 ${index + 1} 格（${run.state === "interrupted" ? "已中斷" : "發生錯誤"}）`, true);
+          notify(t("Run all stopped at cell {number} ({reason})", { number: index + 1, reason: run.state === "interrupted" ? t("interrupted") : t("error") }), true);
           break;
         }
       }
     } finally { runAllCancel.current = null; setRunAll(null); }
-  }, [selected, runCell, refresh, notify]);
+  }, [selected, runCell, refresh, notify, t]);
 
   const interrupt = useCallback(async () => {
     const notebook = docRef.current;
@@ -374,9 +376,9 @@ export function App(props: {
       const result = await api.document(id);
       docRef.current = result.notebook; setDoc(result.notebook);
       setSelected(result.notebook.cells[0]?.id ?? null); setEditing(false);
-      if (result.warning) notify(describe(new ApiError(result.warning)), true);
+      if (result.warning) notify(describe(new ApiError(result.warning), locale), true);
     } catch (error) { fail(error); }
-  }, [api, notify, fail]);
+  }, [api, notify, fail, locale]);
 
   const create = useCallback(async (title: string, machine: string) => {
     setCreating(true);
@@ -405,14 +407,14 @@ export function App(props: {
     if (!notebook) return;
     try {
       await api.close(notebook.id, discardOutputs);
-      notify("runtime 已釋放");
+      notify(t("Runtime released"));
       await refresh();
       setCompute(await api.compute().catch(() => null));
     } catch (error) {
       if (error instanceof ApiError && error.result?.outputsPersisted === false) setDialog({ kind: "discard", notebookId: notebook.id });
       else fail(error);
     }
-  }, [api, refresh, notify, fail]);
+  }, [api, refresh, notify, fail, t]);
 
   const exportIpynb = useCallback(() => {
     const notebook = docRef.current;
@@ -420,9 +422,9 @@ export function App(props: {
     try {
       // Keep this synchronous with the click so the browser preserves user activation.
       props.openLink(`${props.siteOrigin}/api/notebooks/${encodeURIComponent(notebook.id)}/export`);
-      notify("已開啟 notebook 下載（只含已儲存的版本）");
+      notify(t("Notebook download opened (saved versions only)"));
     } catch (error) { fail(error); }
-  }, [props.openLink, props.siteOrigin, notify, fail]);
+  }, [props.openLink, props.siteOrigin, notify, fail, t]);
 
   const askDelete = useCallback(async (id: string) => {
     try { setDialog({ kind: "delete", preview: await api.deletePreview(id) }); } catch (error) { fail(error); }
@@ -433,10 +435,10 @@ export function App(props: {
       await api.deleteNotebook(preview.notebookId, preview.artifactCount);
       setDialog(null);
       if (docRef.current?.id === preview.notebookId) { docRef.current = null; setDoc(null); }
-      notify(`已刪除「${preview.title}」`);
+      notify(t("Deleted “{title}”", { title: preview.title }));
       await loadHome();
     } catch (error) { setDialog(null); fail(error); }
-  }, [api, loadHome, notify, fail]);
+  }, [api, loadHome, notify, fail, t]);
 
   const rename = useCallback(async (id: string, title: string) => {
     const value = title.trim();
@@ -501,28 +503,30 @@ export function App(props: {
   // ---------- Render ----------
   const anySaving = Object.values(drafts).some((draft) => draft.status === "saving");
   const dialogs = dialog && <>
-    {dialog.kind === "delete" && <Dialog title={`刪除「${dialog.preview.title}」？`} onClose={() => setDialog(null)} actions={<>
-      <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>取消</button>
+    {dialog.kind === "delete" && <Dialog title={t("Delete “{title}”?", { title: dialog.preview.title })} onClose={() => setDialog(null)} actions={<>
+      <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>{t("Cancel")}</button>
       <button type="button" className="btn btn-danger" disabled={dialog.preview.state !== "closed" && dialog.preview.state !== "deleting"}
-        onClick={() => void confirmDelete(dialog.preview)}>永久刪除</button>
+        onClick={() => void confirmDelete(dialog.preview)}>{t("Permanently delete")}</button>
     </>}>
-      <p>會一起刪除 {dialog.preview.cellCount ?? 0} 格、{dialog.preview.runCount ?? 0} 筆執行紀錄，以及 {dialog.preview.artifactCount} 個成品（{formatBytes(dialog.preview.totalBytes)}）
-        {dialog.preview.permanentCount ? `，其中 ${dialog.preview.permanentCount} 個是永久保留` : ""}。這個動作無法復原。</p>
-      {dialog.preview.state !== "closed" && dialog.preview.state !== "deleting" && <p className="save-error">runtime 還開著，請先關閉 runtime 再刪除。</p>}
+      <p>{t("This deletes {cells} cells, {runs} runs and {artifacts} artifacts ({bytes}).", {
+        cells: dialog.preview.cellCount ?? 0, runs: dialog.preview.runCount ?? 0,
+        artifacts: dialog.preview.artifactCount, bytes: formatBytes(dialog.preview.totalBytes),
+      })} {dialog.preview.permanentCount ? t("{count} artifacts are kept permanently.", { count: dialog.preview.permanentCount }) : ""} {t("This cannot be undone.")}</p>
+      {dialog.preview.state !== "closed" && dialog.preview.state !== "deleting" && <p className="save-error">{t("Close the runtime before deleting.")}</p>}
     </Dialog>}
-    {dialog.kind === "rename" && <Dialog title="改名" onClose={() => setDialog(null)} actions={<>
-      <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>取消</button>
-      <button type="button" className="btn btn-primary" onClick={() => { void rename(dialog.id, dialog.title); setDialog(null); }}>儲存</button>
+    {dialog.kind === "rename" && <Dialog title={t("Rename")} onClose={() => setDialog(null)} actions={<>
+      <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>{t("Cancel")}</button>
+      <button type="button" className="btn btn-primary" onClick={() => { void rename(dialog.id, dialog.title); setDialog(null); }}>{t("Save")}</button>
     </>}>
-      <input className="input" value={dialog.title} maxLength={120} aria-label="新名稱"
+      <input className="input" value={dialog.title} maxLength={120} aria-label={t("New name")}
         onChange={(event) => setDialog({ ...dialog, title: event.target.value })}
         onKeyDown={(event) => { if (event.key === "Enter") { void rename(dialog.id, dialog.title); setDialog(null); } }} />
     </Dialog>}
-    {dialog.kind === "discard" && <Dialog title="成品還沒保存完" onClose={() => setDialog(null)} actions={<>
-      <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>保留 runtime</button>
-      <button type="button" className="btn btn-danger" onClick={() => { setDialog(null); void closeRuntime(true); }}>放棄未保存內容並關閉</button>
+    {dialog.kind === "discard" && <Dialog title={t("Outputs are not fully saved")} onClose={() => setDialog(null)} actions={<>
+      <button type="button" className="btn btn-secondary" onClick={() => setDialog(null)}>{t("Keep runtime")}</button>
+      <button type="button" className="btn btn-danger" onClick={() => { setDialog(null); void closeRuntime(true); }}>{t("Discard unsaved content and close")}</button>
     </>}>
-      <p>正常關閉會保留 runtime，讓結果與成品先保存完。只有在接受遺失未保存內容時才強制關閉。</p>
+      <p>{t("Normal close keeps the runtime until outputs and artifacts are saved. Force close only if you accept losing unsaved content.")}</p>
     </Dialog>}
   </>;
 
@@ -537,7 +541,7 @@ export function App(props: {
     </div>;
   }
 
-  const status = runtimeStatus(doc);
+  const status = runtimeStatus(doc, locale);
   const open = doc.state === "open";
   const gpus = compute?.eligibleGpus ?? [];
   return (
@@ -545,57 +549,58 @@ export function App(props: {
       <header className="top">
         <div className="top-inner">
           <div className="top-title">
-            <div className="crumb"><button type="button" onClick={() => void goHome()}>所有 notebook</button><span>／ 由你與 ChatGPT 共同編輯</span></div>
+            <div className="crumb"><button type="button" onClick={() => void goHome()}>{t("All notebooks")}</button><span> / {t("Edited by you and ChatGPT")}</span></div>
             {titleDraft === null
-              ? <h1 className="title" title="按一下改名" onClick={() => setTitleDraft(doc.title)}>{doc.title}</h1>
-              : <input className="title-input" autoFocus value={titleDraft} maxLength={120} aria-label="notebook 名稱"
+              ? <h1 className="title" title={t("Click to rename")} onClick={() => setTitleDraft(doc.title)}>{doc.title}</h1>
+              : <input className="title-input" autoFocus value={titleDraft} maxLength={120} aria-label={t("Notebook name")}
                   onChange={(event) => setTitleDraft(event.target.value)}
                   onBlur={() => { if (titleDraft.trim() && titleDraft !== doc.title) void rename(doc.id, titleDraft); setTitleDraft(null); }}
                   onKeyDown={(event) => { if (event.key === "Enter") (event.target as HTMLInputElement).blur(); if (event.key === "Escape") setTitleDraft(null); }} />}
           </div>
           <div className="top-actions">
+            <LanguagePicker />
             <span className={`status status-${status.tone}`}>{status.label}</span>
             {runAll
-              ? <button type="button" className="btn btn-secondary" onClick={() => { if (runAllCancel.current) runAllCancel.current.cancelled = true; }}>停止全部執行（{runAll.done}／{runAll.total}）</button>
-              : <button type="button" className="btn btn-primary" disabled={!open || Boolean(doc.activeRunId)} onClick={() => void runMany("all")}>全部執行</button>}
-            <button type="button" className="btn btn-secondary" disabled={!doc.activeRunId} onClick={() => void interrupt()}>中斷</button>
-            <button type="button" className="icon-btn" aria-label="匯出 .ipynb" title="匯出 .ipynb" onClick={() => void exportIpynb()}><Icon.download /></button>
-            <button type="button" className="icon-btn" aria-label={drawerOpen ? "收起側欄" : "打開側欄"} title="成品與設定" aria-pressed={drawerOpen}
+              ? <button type="button" className="btn btn-secondary" onClick={() => { if (runAllCancel.current) runAllCancel.current.cancelled = true; }}>{t("Stop running all ({done}/{total})", { done: runAll.done, total: runAll.total })}</button>
+              : <button type="button" className="btn btn-primary" disabled={!open || Boolean(doc.activeRunId)} onClick={() => void runMany("all")}>{t("Run all")}</button>}
+            <button type="button" className="btn btn-secondary" disabled={!doc.activeRunId} onClick={() => void interrupt()}>{t("Interrupt")}</button>
+            <button type="button" className="icon-btn" aria-label={t("Export .ipynb")} title={t("Export .ipynb")} onClick={() => void exportIpynb()}><Icon.download /></button>
+            <button type="button" className="icon-btn" aria-label={drawerOpen ? t("Hide sidebar") : t("Show sidebar")} title={t("Artifacts and settings")} aria-pressed={drawerOpen}
               onClick={() => setDrawerOpen((value) => !value)}><Icon.panel /></button>
-            <Menu label="更多操作" items={[
-              { label: "從選取的格子往下執行", disabled: !open || Boolean(runAll), onSelect: () => void runMany("from") },
-              { label: "執行到選取的格子", disabled: !open || Boolean(runAll), onSelect: () => void runMany("to") },
-              { label: "重新整理", onSelect: () => void refresh() },
-              open ? { label: "關閉 runtime", onSelect: () => void closeRuntime() }
-                : { label: "開機", disabled: doc.state !== "closed", onSelect: () => void startRuntime() },
-              { label: "刪除 notebook", danger: true, onSelect: () => void askDelete(doc.id) },
+            <Menu label={t("More actions")} items={[
+              { label: t("Run from selected cell"), disabled: !open || Boolean(runAll), onSelect: () => void runMany("from") },
+              { label: t("Run through selected cell"), disabled: !open || Boolean(runAll), onSelect: () => void runMany("to") },
+              { label: t("Refresh"), onSelect: () => void refresh() },
+              open ? { label: t("Close runtime"), onSelect: () => void closeRuntime() }
+                : { label: t("Start runtime"), disabled: doc.state !== "closed", onSelect: () => void startRuntime() },
+              { label: t("Delete notebook"), danger: true, onSelect: () => void askDelete(doc.id) },
             ]} />
           </div>
         </div>
-        <div className="hintbar" aria-label="快捷鍵">
-          <span><kbd>Shift</kbd> + <kbd>Enter</kbd> 儲存、執行並跳到下一格</span>
-          <span><kbd>Esc</kbd> 指令模式</span>
-          <span><kbd>A</kbd>／<kbd>B</kbd> 在上方／下方新增</span>
-          <span><kbd>M</kbd>／<kbd>Y</kbd> 轉成 Markdown／程式碼</span>
-          <span><kbd>Alt</kbd> + <kbd>↑</kbd>／<kbd>↓</kbd> 移動</span>
-          <span><kbd>D</kbd> <kbd>D</kbd> 刪除</span>
+        <div className="hintbar" aria-label={t("Keyboard shortcuts")}>
+          <span><kbd>Shift</kbd> + <kbd>Enter</kbd> {t("Save, run and advance")}</span>
+          <span><kbd>Esc</kbd> {t("Command mode")}</span>
+          <span><kbd>A</kbd>/<kbd>B</kbd> {t("Insert above / below")}</span>
+          <span><kbd>M</kbd>/<kbd>Y</kbd> {t("Markdown / code")}</span>
+          <span><kbd>Alt</kbd> + <kbd>↑</kbd>/<kbd>↓</kbd> {t("Move")}</span>
+          <span><kbd>D</kbd> <kbd>D</kbd> {t("Delete")}</span>
         </div>
       </header>
 
       <div className={`body${drawerOpen ? "" : " no-drawer"}`}>
         <main className="cells" ref={cellsRef} tabIndex={-1} aria-label="notebook cells">
           {doc.state === "closed" && <div className="banner">
-            <span className="grow">runtime 已關閉。可以繼續編輯，開機後才能執行。</span>
-            <select className="select" value={openCompute} onChange={(event) => setOpenCompute(event.target.value)} aria-label="開機機型">
+            <span className="grow">{t("Runtime is closed. You can keep editing; start it to run code.")}</span>
+            <select className="select" value={openCompute} onChange={(event) => setOpenCompute(event.target.value)} aria-label={t("Startup machine")}>
               <option value="CPU">CPU</option>
-              {gpus.length > 0 && <option value="AUTO">GPU（自動，L4 優先）</option>}
+              {gpus.length > 0 && <option value="AUTO">{t("GPU (automatic, L4 preferred)")}</option>}
               {gpus.map((gpu) => <option key={gpu} value={gpu}>{gpu}</option>)}
             </select>
-            <button type="button" className="btn btn-primary" onClick={() => void startRuntime()}>開機</button>
+            <button type="button" className="btn btn-primary" onClick={() => void startRuntime()}>{t("Start runtime")}</button>
           </div>}
-          {doc.state === "unknown" && <div className="banner"><span className="status status-alert">警示</span>
-            <span className="grow">runtime 狀態不明，可能仍在計費。請重新整理，或從選單關閉 runtime。</span></div>}
-          {doc.cells.length === 0 && <p className="note" style={{ marginLeft: "var(--gutter)" }}>這本 notebook 還沒有內容。</p>}
+          {doc.state === "unknown" && <div className="banner"><span className="status status-alert">{t("Warning")}</span>
+            <span className="grow">{t("Runtime state is unknown and may still consume credits. Refresh or close it from the menu.")}</span></div>}
+          {doc.cells.length === 0 && <p className="note" style={{ marginLeft: "var(--gutter)" }}>{t("This notebook is empty.")}</p>}
           {doc.cells.map((cell, index) => (
             <Cell key={cell.id} cell={cell} index={index} total={doc.cells.length} now={now}
               selected={selected === cell.id} editing={editing && selected === cell.id}
@@ -613,8 +618,8 @@ export function App(props: {
               onInterrupt={() => void interrupt()} onResolve={(choice) => resolve(cell.id, choice)} onLoadOutput={(runId) => void loadOutput(runId)} />
           ))}
           <div className="adder">
-            <button type="button" className="btn btn-secondary" onClick={() => void insert(doc.cells.length)}>新增程式碼</button>
-            <button type="button" className="btn btn-secondary" onClick={() => void insert(doc.cells.length, "markdown")}>新增 Markdown</button>
+            <button type="button" className="btn btn-secondary" onClick={() => void insert(doc.cells.length)}>{t("Add code")}</button>
+            <button type="button" className="btn btn-secondary" onClick={() => void insert(doc.cells.length, "markdown")}>{t("Add Markdown")}</button>
           </div>
         </main>
         <Drawer api={api} notebook={doc} open={drawerOpen} siteOrigin={props.siteOrigin} onClose={() => setDrawerOpen(false)}

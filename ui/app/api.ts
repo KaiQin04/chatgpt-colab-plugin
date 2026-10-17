@@ -2,6 +2,8 @@
 import { isFailure } from "../../lib/notebook/contract.ts";
 import type { ArtifactView, DocumentView, NotebookToolName, ToolArgs } from "../../lib/notebook/contract.ts";
 import type { NotebookClient, ToolResult } from "../../lib/notebook/client.ts";
+import { translate } from "./i18n.ts";
+import type { Locale, Message } from "./i18n.ts";
 
 export class ApiError extends Error {
   constructor(readonly code: string, readonly stage = "ui", readonly result?: ToolResult) {
@@ -131,23 +133,24 @@ export class NotebookApi {
   }
 }
 
-const MESSAGES: Record<string, string> = {
-  version_conflict_or_document_limit: "這一格已被修改，或 notebook 已達大小上限",
-  structure_version_conflict: "notebook 結構剛被修改，已重新載入",
-  structure_version_required: "缺少結構版本",
-  cell_running: "這一格正在執行，請先中斷",
-  cell_not_found: "找不到這一格，可能已被刪除",
-  cell_index_out_of_range: "位置超出範圍",
-  notebook_busy: "notebook 正在處理其他操作，請稍後再試",
-  notebook_runtime_open: "請先關閉 runtime 再刪除",
-  notebook_not_found: "找不到這本 notebook",
-  bridge_timeout_unknown: "請求逾時，結果未確認；請重新整理後再操作",
-  request_failed_unknown: "請求未完成，結果未確認",
-  release_unconfirmed: "runtime 釋放未確認，請重新整理後再關閉一次",
+const MESSAGES: Record<string, Message> = {
+  version_conflict_or_document_limit: "This cell changed or the notebook size limit was reached",
+  structure_version_conflict: "Notebook structure changed; reloaded",
+  structure_version_required: "Structure version is missing",
+  cell_running: "This cell is running; interrupt it first",
+  cell_not_found: "Cell not found; it may have been deleted",
+  cell_index_out_of_range: "Position is out of range",
+  notebook_busy: "Notebook is busy; try again later",
+  notebook_runtime_open: "Close the runtime before deleting",
+  notebook_not_found: "Notebook not found",
+  bridge_timeout_unknown: "Request timed out with an unknown result; refresh before trying again",
+  request_failed_unknown: "Request did not complete; result is unknown",
+  release_unconfirmed: "Runtime release is unconfirmed; refresh and try closing again",
 };
 
 /** Human-readable message for an error code; unknown codes are shown verbatim. */
-export function describe(error: unknown): string {
-  if (error instanceof ApiError) return MESSAGES[error.code] ?? `操作未完成（${error.code}）`;
-  return "操作未完成";
+export function describe(error: unknown, locale: Locale = "zh-TW"): string {
+  if (error instanceof ApiError) return MESSAGES[error.code]
+    ? translate(locale, MESSAGES[error.code]) : translate(locale, "Operation did not complete ({code})", { code: error.code });
+  return translate(locale, "Operation did not complete");
 }

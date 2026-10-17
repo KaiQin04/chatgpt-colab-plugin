@@ -7,6 +7,7 @@ import { createBridgeClient, createFetchClient } from "../lib/notebook/client.ts
 import type { NotebookClient } from "../lib/notebook/client.ts";
 import { NotebookApi } from "./app/api.ts";
 import { App } from "./app/App.tsx";
+import { LanguagePicker, LocaleProvider, useI18n } from "./app/Locale.tsx";
 import "./styles.css";
 
 declare global {
@@ -35,6 +36,12 @@ function openLink(url: string): void {
   else window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function ConnectionError({ code }: { code: string }) {
+  const { t } = useI18n();
+  return <main className="home"><div className="home-heading"><h1>Colab Notebook</h1><LanguagePicker /></div>
+    <p className="note">{t("Connection failed ({code}). Reopen the panel.", { code })}</p></main>;
+}
+
 async function start(): Promise<void> {
   applyTheme();
   window.addEventListener("openai:set_globals", applyTheme);
@@ -43,12 +50,11 @@ async function start(): Promise<void> {
     const client = await connect();
     const siteOrigin = window.__CCM_SITE_ORIGIN__ && !window.__CCM_SITE_ORIGIN__.startsWith("__")
       ? window.__CCM_SITE_ORIGIN__ : location.origin;
-    root.render(<App api={new NotebookApi(client)} siteOrigin={siteOrigin} openLink={openLink}
-      onToolResult={(listener) => client.onToolResult(listener)} />);
+    root.render(<LocaleProvider><App api={new NotebookApi(client)} siteOrigin={siteOrigin} openLink={openLink}
+      onToolResult={(listener) => client.onToolResult(listener)} /></LocaleProvider>);
     window.addEventListener("pagehide", () => client.dispose(), { once: true });
   } catch (error) {
-    root.render(<main className="home"><h1>Colab Notebook</h1>
-      <p className="note">連線未完成（{error instanceof Error ? error.message : "unknown"}）。請重新開啟面板。</p></main>);
+    root.render(<LocaleProvider><ConnectionError code={error instanceof Error ? error.message : "unknown"} /></LocaleProvider>);
   }
 }
 

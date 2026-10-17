@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { python, pythonLanguage } from "@codemirror/lang-python";
 import { bracketMatching, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
 import { highlightCode, tagHighlighter, tags } from "@lezer/highlight";
 
@@ -55,6 +55,7 @@ export function CodeEditor(props: {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const commands = useRef<EditorCommands>(props);
+  const labels = useRef(new Compartment());
   useLayoutEffect(() => { commands.current = props; });
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export function CodeEditor(props: {
         history(), drawSelection(), indentOnInput(), bracketMatching(),
         syntaxHighlighting(highlighter),
         ...(props.language === "python" ? [python()] : [EditorView.lineWrapping]),
-        placeholder(props.placeholder ?? ""),
+        labels.current.of([placeholder(props.placeholder ?? ""), EditorView.contentAttributes.of({ "aria-label": props.label })]),
         keymap.of([
           { key: "Shift-Enter", run: run(true) },
           { key: "Mod-Enter", run: run(false) },
@@ -78,7 +79,6 @@ export function CodeEditor(props: {
           if (update.docChanged) commands.current.onChange(update.state.doc.toString());
           if (update.focusChanged && !update.view.hasFocus) commands.current.onBlur();
         }),
-        EditorView.contentAttributes.of({ "aria-label": props.label }),
       ],
     });
     const editor = new EditorView({ state, parent: host.current });
@@ -96,6 +96,13 @@ export function CodeEditor(props: {
       editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: props.value } });
     }
   }, [props.value]);
+
+  // Relabel an existing editor without discarding its document, selection or history.
+  useEffect(() => {
+    view.current?.dispatch({ effects: labels.current.reconfigure([
+      placeholder(props.placeholder ?? ""), EditorView.contentAttributes.of({ "aria-label": props.label }),
+    ]) });
+  }, [props.label, props.placeholder]);
 
   return <div className="cm-host" ref={host} />;
 }

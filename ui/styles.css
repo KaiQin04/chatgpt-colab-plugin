@@ -280,3 +280,6 @@ kbd { font: 12px/16px var(--font-mono); padding: 1px 6px; border: 1px solid var(
   .home { padding: 24px 12px 72px; }
   .home h1 { font-size: 28px; line-height: 40px; }
 }
+/* Language controls wrap with the existing toolbar on narrow panels. */
+.home-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.language-picker { min-width: 118px; flex-shrink: 0; }

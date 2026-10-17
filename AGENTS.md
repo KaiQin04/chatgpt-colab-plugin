@@ -25,4 +25,5 @@
 - 執行 npm run check 與 npm run build；對外發布另執行 npm run audit:public。Golden 只能針對預期變更更新並檢查差異；不得藉更新 golden 掩蓋未知回歸。
 - 合成測試不能冒充 Google OAuth、真實 Colab 或新帳戶部署驗證。不得為包裝／文件工作自行開啟 runtime 或花費額度。
 - MCP UI-only aliases 僅記錄操作來源，不是授權邊界；所有路徑仍需相同 owner 驗證。
+- Notebook 介面維持 English／繁體中文，使用 ui/app/i18n.ts 的型別化文案及 LocaleProvider；不要在元件新增只支援單語的按鈕、錯誤或 aria-label。語言切換不可改寫使用者 notebook 內容或執行來源。
 - Commit 使用 feat/fix/docs/refactor/test/chore 等分類。發布前閱讀 docs/RELEASING.md。

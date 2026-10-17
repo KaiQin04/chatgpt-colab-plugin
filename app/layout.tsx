@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Colab Notebook",
-  description: "使用自己的 Google 帳號與 Colab 運算額度的私人 Notebook。",
+  description: "Run notebooks in ChatGPT using your own Google account and Colab compute credits.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-Hant">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased">{children}</body>
     </html>
   );

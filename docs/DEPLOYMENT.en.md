@@ -14,7 +14,7 @@ The backend trusts identity headers supplied by Sites after authentication. Do n
 
 ## 1. Obtain and check a release
 
-Clone the repository and select a tagged release, for example `git switch --detach v0.1.1`. The public template must not contain an existing Site ID, OAuth secret, or user data.
+Clone the repository and select a tagged release, for example `git switch --detach v0.2.0`. The public template must not contain an existing Site ID, OAuth secret, or user data.
 
 ```sh
 npm ci
@@ -77,7 +77,9 @@ Retain the deployment version and URL. Preserve the same project ID, secrets, D1
 
 Start with the panel and runtime-settings tools, which do not allocate compute. After Google authorization, read the balance and eligible hardware. Eligibility does not guarantee an allocation will succeed.
 
-Only after you authorize compute usage: open one CPU runtime, run `print(1 + 2)`, export the notebook, verify the downloaded file, and close the runtime. Verify release independently. The UI currently uses Traditional Chinese: a manual Shift + Enter run should show **「由你執行」** (“Run by you”), while an assistant tool call should show **「由 ChatGPT 執行」**. Historical attribution is not rewritten.
+The interface supports English and Traditional Chinese. It uses the first supported language in your browser preferences on the first visit, falling back to English. Change it from the language selector on the home page or editor toolbar. A saved choice takes priority; if browser storage is blocked, the choice lasts for the current panel session.
+
+Only after you authorize compute usage: open one CPU runtime, run `print(1 + 2)`, export the notebook, verify the downloaded file, and close the runtime. Verify release independently. A manual Shift + Enter run should show **Run by you** (「由你執行」), while an assistant tool call should show **Run by ChatGPT** (「由 ChatGPT 執行」). Historical attribution is not rewritten.
 
 Unattended idle cleanup requires a separate Sites recurring update. Follow the current Sites skill for a private service-access `POST /api/maintenance` with JSON body `{}`, at least hourly. Never include its credentials in a schedule prompt. This is not an exact shutdown deadline; without a schedule, close runtimes manually.
 

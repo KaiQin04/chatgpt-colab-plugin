@@ -41,7 +41,7 @@ You can ask an agent with Sites access to guide you:
 
 > Read this repository's AGENTS.md, docs/DEPLOYMENT.en.md, docs/OAUTH.en.md, and skills/setup/SKILL.md. Deploy it to a new ChatGPT Site that only I can access, help me configure my own Google OAuth client, and connect my private plugin. I will enter credentials in the settings UI, not in chat. Start with checks that do not allocate a Colab runtime.
 
-Setup requires your participation in Google account authorization. A public directory installation does not automatically deploy a private backend for you. The notebook UI currently uses Traditional Chinese; the README and setup guides are available in English and Traditional Chinese.
+Setup requires your participation in Google account authorization. A public directory installation does not automatically deploy a private backend for you. The notebook UI supports English and Traditional Chinese. It follows your browser language on the first visit; use the language selector on the home page or editor toolbar to switch. Your choice is remembered in this browser when storage is available.
 
 ## Local development
 
@@ -60,24 +60,6 @@ npm run build
 ```
 
 `npm run dev:ui` starts a localhost preview with synthetic data. It does not connect to Google or consume Colab credits. Python harnesses use `.venv/bin/python`, or the interpreter specified by `NOTEBOOK_TEST_PYTHON`. Missing Python can cause skipped tests; that is not a complete validation pass.
-
-## Releases and upgrades
-
-The maintainer develops features in a private source repository and publishes reviewed, sanitized versions here. This public repository does not include private Git history, deployment settings, credentials, or user data. “Stable release” describes the release workflow; it does not promise stability of Colab's unversioned endpoints.
-
-Publishing a release does **not** update anyone's deployed Site. For upgrades, open your existing Site source through the Sites workflow, apply the selected release, and preserve your own `.openai/hosting.json`, `lib/platform/deployment.ts`, secrets, database, and storage. Review migrations, run checks, and deploy to the same private Site. Back up required notebooks and artifacts first. There is no automatic updater.
-
-Agents should read [AGENTS.md](AGENTS.md). Detailed maintainer release instructions are in [docs/RELEASING.md](docs/RELEASING.md) (Traditional Chinese).
-
-## Limits and validation
-
-This integration uses unversioned Colab endpoints that may change. A successful OAuth flow is not approval from Google for a third-party integration. Read the [OAuth and Colab limitations](docs/OAUTH.en.md#limits-and-review) before deploying. Keep your Site private to yourself; do not offer other people access to your credentials or Colab runtime.
-
-Stop runtimes when finished and verify that they have been released. Closing the browser, uninstalling the plugin, or revoking OAuth does not itself stop a runtime.
-
-The current release passed 105 application tests, 2 deployment-configuration tests, type checking, and a production build. Manual Shift + Enter attribution was verified on the maintainer's existing private Site. A complete deployment and OAuth flow using a fresh third-party account has **not** yet been verified. See [validation details](docs/VALIDATION.en.md), including the embedded-panel execution limitation.
-
-Google secrets stay in your Site settings; encrypted refresh tokens and notebook records are stored in your D1 database, and saved artifacts in your R2 bucket. Code and imported files go to Colab; tool outputs may also enter your ChatGPT conversation. Google and OpenAI still process data. Do not upload credentials or data you are not authorized to share. See [SECURITY.md](SECURITY.md) for reporting guidance (Traditional Chinese).
 
 ## License
 

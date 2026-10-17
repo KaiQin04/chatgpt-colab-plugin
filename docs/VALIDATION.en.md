@@ -2,6 +2,14 @@
 
 [English](VALIDATION.en.md) | [繁體中文](VALIDATION.md)
 
+## v0.2.0 — October 17, 2026
+
+- English and Traditional Chinese interface, browser-language defaults, a language selector, and browser-local preferences.
+- 109 application tests and 2 configuration tests passed without skips. Type checking, UI generation, and the production build passed.
+- New tests cover language priority, English fallback, invalid or blocked storage, interpolation, errors, and time formatting.
+- Local synthetic browser checks verified a Traditional Chinese default, persistence of an English selection after reload, preservation of code and outputs across switches, localized manual-run attribution, sidebar and confirmation text, and no horizontal overflow at a 640px panel width.
+- This work did not allocate a real Colab runtime or deploy the maintainer's private Site. The language feature has not been separately validated in the live embedded MCP panel, with a fresh third-party deployment, or through Google OAuth.
+
 ## v0.1.1 — October 17, 2026
 
 - 105 application tests and 2 configuration tests passed, with no skipped tests. Type checking, UI bundle generation, and the production build passed.

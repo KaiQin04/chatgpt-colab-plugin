@@ -36,6 +36,8 @@ Your Google OAuth client -> Your Google account -> Your Colab runtime
 
 > 請讀取這個 repo 的 AGENTS.md、docs/DEPLOYMENT.md 和 skills/setup/SKILL.md，幫我部署到新建、僅本人可存取的 ChatGPT Site，設定我自己的 Google OAuth 並連接私人 Plugin。憑證由我在設定介面輸入，不貼進對話。先完成不啟動 runtime 的檢查。
 
+介面提供 English／繁體中文切換，首次依瀏覽器語言選擇；可從首頁或編輯器工具列切換，瀏覽器允許儲存時會記住選擇。
+
 Google 帳號授權與必要的設定仍需本人完成。這不是安裝後零設定的商店 Plugin。第一版不支援直接部署到一般 Cloudflare Worker 或任意 VPS；它依賴 Sites 的身分驗證邊界。
 
 ## 本機開發與驗證
@@ -55,20 +57,6 @@ npm run build
 ```
 
 `npm run dev:ui` 在 localhost 啟動合成資料預覽，不會連線 Google 或使用 Colab 額度。Python harness 使用本專案 `.venv/bin/python`；也可設定 `NOTEBOOK_TEST_PYTHON`。沒有 Python 時部分測試會跳過，不能當成完整驗證通過。
-
-## 版本與維護方式
-
-**主要開發在維護者的私人 repo；這個公開 repo 用來釋出經檢查的穩定版本。** 功能與修正先在私人開發來源驗證，再匯出已清理的程式到本 repo。公開 repo 不包含私人 Git 歷史、部署設定、憑證或驗收資料。「穩定版本」是發布流程的分流，不代表 Colab 非公開 API 有穩定性保證。
-
-其他 agent 請先讀 [AGENTS.md](AGENTS.md)。日常功能不需要在兩個 repo 各寫一次。公開發布、使用者升級與維護者私人 Site 部署是三個獨立動作；公開版更新不會自動替任何人部署。升級請看 [版本與發布流程](docs/RELEASING.md)。
-
-## 使用限制
-
-此整合使用 Colab 的未版本化端點，可能隨時改變。Google OAuth 可以成功，不等於 Google 已核准此第三方整合或公開提供 Colab 存取。請先閱讀 [Google OAuth 與 Colab 限制](docs/OAUTH.md#限制與審核)。不要把自己的 Site 開放給其他人共用運算或憑證。
-
-Colab 的 GPU 可用性、額度與費用取決於你自己的帳號。開啟 runtime 才可能消耗額度；使用完請關閉並確認釋放。關閉瀏覽器或解除 Google 授權不代表 runtime 已停止。
-
-本版可驗證範圍與未測項目見 [驗證紀錄](docs/VALIDATION.md)。資料位置與回報方式見 [SECURITY.md](SECURITY.md)。
 
 ## 授權
 

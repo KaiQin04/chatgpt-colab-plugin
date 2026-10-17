@@ -4,26 +4,30 @@ import type { ReactNode } from "react";
 import type { NotebookView } from "../../lib/notebook/contract.ts";
 import type { ComputeStatus } from "../app/api.ts";
 import { formatDuration, formatNumber } from "../app/text.ts";
+import { useI18n } from "../app/Locale.tsx";
+import { translate } from "../app/i18n.ts";
+import type { Locale } from "../app/i18n.ts";
 import { Icon } from "./icons.tsx";
 
-export function machineLabel(notebook: NotebookView): string {
+export function machineLabel(notebook: NotebookView, locale: Locale = "zh-TW"): string {
   const runtime = notebook.runtime;
-  if (!runtime || runtime.released) return "未開機";
+  if (!runtime || runtime.released) return translate(locale, "Not started");
   if (runtime.computeVerified && runtime.accelerator) return runtime.accelerator;
-  return `${runtime.selectedAccelerator ?? runtime.requestedCompute}（核對中）`;
+  return translate(locale, "{machine} (verifying)", { machine: runtime.selectedAccelerator ?? runtime.requestedCompute });
 }
 
-export function runtimeStatus(notebook: NotebookView): { label: string; tone: "ok" | "watch" | "alert" | "idle" } {
+export function runtimeStatus(notebook: NotebookView, locale: Locale = "zh-TW"): { label: string; tone: "ok" | "watch" | "alert" | "idle" } {
+  const t = (message: Parameters<typeof translate>[1]) => translate(locale, message);
   switch (notebook.state) {
-    case "open": return { label: `${machineLabel(notebook)} 已連線`, tone: "ok" };
-    case "opening": return { label: "開機中", tone: "watch" };
-    case "preparing": return { label: "準備環境中", tone: "watch" };
-    case "importing": return { label: "匯入附件中", tone: "watch" };
-    case "interrupting": return { label: "中斷處理中", tone: "watch" };
-    case "closing": return { label: "關閉中", tone: "watch" };
-    case "unknown": return { label: "狀態不明", tone: "alert" };
-    case "deleting": return { label: "刪除中", tone: "alert" };
-    default: return { label: "runtime 已關閉", tone: "idle" };
+    case "open": return { label: translate(locale, "{machine} connected", { machine: machineLabel(notebook, locale) }), tone: "ok" };
+    case "opening": return { label: t("Starting"), tone: "watch" };
+    case "preparing": return { label: t("Preparing environment"), tone: "watch" };
+    case "importing": return { label: t("Importing attachments"), tone: "watch" };
+    case "interrupting": return { label: t("Interrupting"), tone: "watch" };
+    case "closing": return { label: t("Closing"), tone: "watch" };
+    case "unknown": return { label: t("Unknown state"), tone: "alert" };
+    case "deleting": return { label: t("Deleting"), tone: "alert" };
+    default: return { label: t("Runtime closed"), tone: "idle" };
   }
 }
 
@@ -88,22 +92,23 @@ export function Toast(props: { toast: ToastState; onDone(): void }) {
 }
 
 export function StatusBar(props: { notebook: NotebookView | null; compute: ComputeStatus | null; now: number; saving: boolean }) {
+  const { t, locale } = useI18n();
   const { notebook, compute } = props;
-  const status = notebook ? runtimeStatus(notebook) : null;
+  const status = notebook ? runtimeStatus(notebook, locale) : null;
   const idleLeft = notebook?.idle && notebook.state === "open" && !notebook.activeRunId
     ? notebook.idle.since + notebook.idle.milliseconds - props.now : null;
-  const kernel = !notebook || notebook.state !== "open" ? null : notebook.activeRunId ? "kernel 忙碌" : "kernel 閒置";
+  const kernel = !notebook || notebook.state !== "open" ? null : notebook.activeRunId ? t("Kernel busy") : t("Kernel idle");
   return (
     <footer className="statusbar">
       {status && <span className={`status status-${status.tone}`}>{status.label}</span>}
       {kernel && <span>{kernel}</span>}
-      {idleLeft !== null && <span className="optional">{idleLeft > 0 ? `閒置 ${formatDuration(idleLeft)}後釋放` : "已達閒置門檻，等待巡檢釋放"}</span>}
+      {idleLeft !== null && <span className="optional">{idleLeft > 0 ? t("Releases after {duration} idle", { duration: formatDuration(idleLeft, locale) }) : t("Idle limit reached; awaiting cleanup")}</span>}
       <span className="grow" />
-      {compute && <span>餘額 <span className="num">{formatNumber(compute.currentBalance)}</span> units</span>}
-      {compute && <span className="optional"><span className="num">{formatNumber(compute.consumptionRateHourly)}</span> units/hr
-        {compute.estimatedHoursRemaining ? <> · 約 <span className="num">{formatNumber(compute.estimatedHoursRemaining, 0)}</span> 小時</> : null}</span>}
-      {compute?.balanceWarning && <span className="status status-watch">餘額偏低</span>}
-      {notebook && <span className="optional">{props.saving ? "儲存中" : `已儲存 v${notebook.version}`}</span>}
+      {compute && <span>{t("Balance")} <span className="num">{formatNumber(compute.currentBalance, 2, locale)}</span> units</span>}
+      {compute && <span className="optional"><span className="num">{formatNumber(compute.consumptionRateHourly, 2, locale)}</span> units/hr
+        {compute.estimatedHoursRemaining ? <> · {t("About {hours} hours", { hours: formatNumber(compute.estimatedHoursRemaining, 0, locale) })}</> : null}</span>}
+      {compute?.balanceWarning && <span className="status status-watch">{t("Low balance")}</span>}
+      {notebook && <span className="optional">{props.saving ? t("Saving") : t("Saved v{version}", { version: notebook.version })}</span>}
     </footer>
   );
 }
