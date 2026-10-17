@@ -1,0 +1,1 @@
+ALTER TABLE `wait_diagnostics` ADD `has_progress_token` integer DEFAULT 0 NOT NULL;

@@ -1,0 +1,965 @@
+[
+  {
+    "name": "colab_spike_panel",
+    "title": "Colab Notebook",
+    "icons": [
+      {
+        "src": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGcgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB4PSI1IiB5PSIzIiB3aWR0aD0iMTYiIGhlaWdodD0iMTgiIHJ4PSIyLjUiLz48cGF0aCBkPSJNOSAzdjE4TTMgOGg0TTMgMTZoNCIvPjwvZz48cGF0aCBkPSJtMTIuNSA4IDUuNSA0LTUuNSA0WiIgZmlsbD0iIzAwMCIvPjwvc3ZnPg==",
+        "mimeType": "image/svg+xml",
+        "sizes": [
+          "any"
+        ]
+      }
+    ],
+    "description": "Open the private notebook editor in the conversation or thread tab. Opening the panel only lists saved documents; CPU allocation requires the explicit Open CPU action.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "resourceUri": "ui://colab-spike/panel.html"
+      },
+      "openai/ui": {
+        "entrypoints": [
+          {
+            "type": "global"
+          },
+          {
+            "type": "thread"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "get_runtime_settings",
+    "title": "Read runtime package settings",
+    "description": "Read owner package defaults and settings version. Defaults: polars/lightgbm/duckdb/pyarrow/statsmodels/optuna. No runtime allocation or installation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "set_runtime_settings",
+    "title": "Save package settings for future preparation",
+    "description": "Owner CAS settings: expectedVersion must match (0 initially). Up to 16 plain PyPI distribution names, no URLs/options/version specifiers. Applies to future runtime bootstrap or explicit packages preparation; does not mutate currently running jobs. Empty list disables package installs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "packages": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
+          }
+        }
+      },
+      "required": [
+        "expectedVersion",
+        "packages"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "prepare_runtime",
+    "title": "Prepare packages or official Blender",
+    "description": "Queue one exclusive setup on an existing idle runtime, no allocation. target=packages checks distributions and installs only missing wheels from PyPI (300s installer timeout); target=blender installs the source-verified official Blender 5.2.2 Linux x64 binary, checksum verified. Never tries alternate versions/mirrors/bpy. get_notebook submits the reserved setup once, then reads progress/result/executable path in short requests. Same key never redispatches unknown work; a new key explicitly retries a terminal failure. Cell/import/setup cannot compete for the kernel.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "packages",
+            "blender"
+          ]
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "notebookId",
+        "target",
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "get_compute_status",
+    "title": "Read balance, available GPUs and open notebooks",
+    "description": "Read current Colab balance/rate, account-wide estimated hours at that rate, dynamic eligible GPUs and owner notebooks with observed machines and idle durations. Rate zero means unknown estimate. Negative balance warns but does not block allocation. Paginate open notebooks with nextAfterNotebookId; no server runtime cap or allocation queue. TPU is unsupported.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "afterNotebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "open_notebook",
+    "title": "Open a CPU or GPU notebook",
+    "description": "Create/reopen one notebook runtime and persistent Python kernel. compute defaults to CPU; specify an exact current eligible GPU or AUTO (GPU intent, priority L4/T4/A100/G4 then other eligible GPUs alphabetically). AUTO is a general default, not VRAM/workload inference; specify the required GPU for large workloads. Selection happens once before allocation; refusals never queue, fall back or allocate another machine. Uses Colab compute until close. No product-wide runtime cap; each notebook retains its own allocation/unknown lock. Reuse identical notebookId, compute and idempotencyKey for network retries. TPU unsupported.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "compute": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Z][A-Z0-9_-]*$",
+          "default": "CPU"
+        }
+      },
+      "required": [
+        "notebookId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "import_file",
+    "title": "Import a conversation attachment into notebook inputs",
+    "description": "Send one file's temporary download URL directly to the existing idle runtime. No allocation. Returns quickly after submission; get_notebook reads bytes/SHA-256/path and terminal errors. URL is transient, never stored in notebook source, D1, export or IPython history. HTTPS public destinations only; 128 MiB/file, 20s download deadline checks. Each import has a unique inputs/<importId>/<filename> path; never silently overwrites. Reuse key for uncertain ACK/retries; only a NEW key plus fresh URL retries a known terminal download error. Active cell/import blocks kernel competition. Inputs are ephemeral runtime files, not a persistent file library.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "file": {
+          "type": "object",
+          "properties": {
+            "download_url": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "file_id": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "mime_type": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "file_name": {
+              "type": "string",
+              "maxLength": 180
+            }
+          },
+          "required": [
+            "download_url",
+            "file_id"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "notebookId",
+        "idempotencyKey",
+        "file"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      },
+      "openai/fileParams": [
+        "file"
+      ]
+    }
+  },
+  {
+    "name": "upsert_cell",
+    "title": "Save a notebook cell",
+    "description": "Save code or markdown without executing it. expectedVersion is this cell's current version (0 creates a new UUID cell); only that cell is compared, so other cells may change concurrently. A conflict never overwrites newer edits. New cells append at the end, or pass index with the notebook structureVersion to insert there. notebookVersion is accepted and ignored.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "code",
+            "markdown"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "structureVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "notebookVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "notebookId",
+        "cellId",
+        "kind",
+        "source",
+        "expectedVersion"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "move_cell",
+    "title": "Move a notebook cell",
+    "description": "Move a cell to toIndex (0-based position in the current order). Requires the notebook structureVersion from get_notebook; a stale value returns structure_version_conflict without changes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "toIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "structureVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "notebookId",
+        "cellId",
+        "toIndex",
+        "structureVersion"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "delete_cell",
+    "title": "Delete a notebook cell",
+    "description": "Remove a cell from the document. Its run history and saved artifacts are kept (artifacts follow their retention). A running cell cannot be deleted; interrupt it first. Requires the notebook structureVersion.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "structureVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "notebookId",
+        "cellId",
+        "structureVersion"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "run_cell",
+    "title": "Submit a saved code cell",
+    "description": "Submit the saved cellVersion once and return quickly. Reuse idempotencyKey on a retry; a NEW key deliberately runs again after the previous run finishes. ACK unknown is retained, never redispatched. Poll get_notebook for capped outputs. Code and run actor/time are retained. No stdin or Google/Drive auth responses.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "notebookId",
+        "cellId",
+        "cellVersion",
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "get_notebook",
+    "title": "Read notebook and execution progress",
+    "description": "Without notebookId, list the latest 30 owner documents and latest maintenance readback. With notebookId, poll cells/inputs/setup, persist results and checkpoint output artifacts to R2 in a short request. A reserved pending setup may dispatch its predefined package/Blender installer exactly once. Optional runId reads an earlier snapshot. No runtime allocation or user-cell dispatch.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "view": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "outline",
+            "full"
+          ]
+        },
+        "cellIds": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "interrupt_cell",
+    "title": "Interrupt the active cell",
+    "description": "Ask the existing kernel to interrupt. This is a request, not proof of terminal status; poll get_notebook. Does not close the runtime or erase output.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        }
+      },
+      "required": [
+        "notebookId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "close_notebook",
+    "title": "Save results and release notebook runtime",
+    "description": "Block new runs, save terminal output and artifact files, release only this notebook's runtime, and confirm it is absent from assignments. If results/artifacts cannot be saved, retain the runtime for rescue. Set discardOutputs=true only when explicitly accepting loss of unsaved results/artifacts. Unknown release retains this notebook's lock and can be retried.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "discardOutputs": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "notebookId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "export_ipynb",
+    "title": "Export saved notebook",
+    "description": "Export bounded nbformat 4.5 JSON. Only outputs from the currently saved cell version are attached. Run snapshots remain in D1. Poll first to save the newest remote output. No allocation.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        }
+      },
+      "required": [
+        "notebookId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "rename_notebook",
+    "title": "Rename a notebook",
+    "description": "Change a notebook title. The latest rename wins; cell versions are unaffected.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        }
+      },
+      "required": [
+        "notebookId",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "delete_notebook",
+    "title": "Delete a notebook and all its artifacts",
+    "description": "Permanently delete a closed notebook: document, cells, run history and every artifact including permanent ones. Close the runtime first. confirmArtifactCount must equal the notebook's current artifact count; otherwise nothing is deleted and the response lists what would be removed (cells, runs, artifacts, bytes, permanent artifacts). dryRun=true always returns that preview. Cannot be undone.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "confirmArtifactCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dryRun": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "notebookId",
+        "confirmArtifactCount"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "get_artifacts",
+    "title": "Save and list notebook artifacts",
+    "description": "Checkpoint one pending output file then list owner artifacts. Only the terminal run manifest under /content/<notebookId>/outputs is eligible. Hard limits: 16 MiB/file, 128 MiB/run, 32 files; blocked files prevent automatic release. Optional path filters this manifest. artifactId returns one five-minute owner-auth download link and a bounded safe image preview.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "beforeId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      },
+      "required": [
+        "notebookId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "pin_artifact",
+    "title": "Keep or unpin an artifact",
+    "description": "Pin an owner artifact permanently or return it to its original 30-day retention. Expired/retiring files cannot be rescued by racing pin. Updates user activity.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "permanent": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifactId",
+        "permanent"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "maintain_notebooks",
+    "title": "Maintain saved outputs and idle runtimes",
+    "description": "Owner-only short maintenance with a durable fair scan cursor: progress reserved predefined setup, poll active work, checkpoint outputs, release at most one runtime only after results/artifacts are saved and fixed CPU 5h/GPU 2h idle policy is due, retire unpinned artifacts after 30 days. Repeat only when ok and actionablePending>0; runningCount alone is not actionable. Hourly cloud scheduling configured separately. Never allocate, dispatch user cells, change clocks or force discard.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "ui_upsert_cell",
+    "title": "Save a notebook cell",
+    "description": "Save code or markdown without executing it. expectedVersion is this cell's current version (0 creates a new UUID cell); only that cell is compared, so other cells may change concurrently. A conflict never overwrites newer edits. New cells append at the end, or pass index with the notebook structureVersion to insert there. notebookVersion is accepted and ignored.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "code",
+            "markdown"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "expectedVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "structureVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "notebookVersion": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "notebookId",
+        "cellId",
+        "kind",
+        "source",
+        "expectedVersion"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "ui_run_cell",
+    "title": "Submit a saved code cell",
+    "description": "Submit the saved cellVersion once and return quickly. Reuse idempotencyKey on a retry; a NEW key deliberately runs again after the previous run finishes. ACK unknown is retained, never redispatched. Poll get_notebook for capped outputs. Code and run actor/time are retained. No stdin or Google/Drive auth responses.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "notebookId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        },
+        "cellVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": [
+        "notebookId",
+        "cellId",
+        "cellVersion",
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
+    }
+  }
+]

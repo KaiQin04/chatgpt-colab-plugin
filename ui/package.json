@@ -1,0 +1,15 @@
+{
+  "name": "colab-notebook-ui",
+  "private": true,
+  "description": "Build-time dependencies of the bundled notebook UI. The generated bundle is committed; the Site build does not install these.",
+  "devDependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.13",
+    "@lezer/highlight": "1.2.5",
+    "dompurify": "3.4.16",
+    "marked": "18.0.14"
+  }
+}

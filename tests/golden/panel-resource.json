@@ -1,0 +1,31 @@
+[
+  {
+    "uri": "ui://colab-spike/panel.html",
+    "mimeType": "text/html;profile=mcp-app",
+    "_meta": {
+      "ui": {
+        "prefersBorder": true,
+        "csp": {
+          "connectDomains": [],
+          "resourceDomains": []
+        }
+      },
+      "openai/ui": {
+        "availableDisplayModes": [
+          "inline",
+          "fullscreen"
+        ],
+        "preferredDisplayMode": "fullscreen"
+      },
+      "openai/widgetCSP": {
+        "connect_domains": [],
+        "resource_domains": [],
+        "redirect_domains": [
+          "https://site.example.test"
+        ]
+      }
+    },
+    "textSha256": "94e311c96e02ad6e2053d6f40b383fd97c988051c31e5a004e129587c343bd04",
+    "textLength": 689490
+  }
+]

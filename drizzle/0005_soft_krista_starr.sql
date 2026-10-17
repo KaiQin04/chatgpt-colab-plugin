@@ -1,0 +1,1 @@
+ALTER TABLE `notebooks` ADD `control_token` text;

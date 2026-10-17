@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `probe_runs_owner_single_attempt` ON `probe_runs` (`owner_id`);

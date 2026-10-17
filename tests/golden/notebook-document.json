@@ -1,0 +1,144 @@
+{
+  "notebook": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "title": "Golden notebook",
+    "version": 2,
+    "state": "open",
+    "createdAt": "<time>",
+    "updatedAt": "<time>",
+    "activeRunId": null,
+    "runtime": {
+      "id": "<uuid>",
+      "state": "open",
+      "released": false,
+      "requestedCompute": "CPU",
+      "selectedAccelerator": "CPU",
+      "machineKind": "CPU",
+      "accelerator": "CPU",
+      "computeVerified": true,
+      "createdAt": "<time>",
+      "error": null
+    },
+    "activeInputId": null,
+    "activeSetupId": null,
+    "setupTasks": [
+      {
+        "id": "<uuid>",
+        "kind": "packages",
+        "state": "ready",
+        "createdAt": "<time>",
+        "finishedAt": "<time>",
+        "packages": [
+          "polars",
+          "lightgbm",
+          "duckdb",
+          "pyarrow",
+          "statsmodels",
+          "optuna"
+        ],
+        "result": {
+          "protocol": 1,
+          "jobId": "<uuid>",
+          "status": "ready",
+          "phase": "ready",
+          "packages": [
+            {
+              "name": "polars",
+              "version": "1.0.0",
+              "installed": false
+            },
+            {
+              "name": "lightgbm",
+              "version": "1.0.0",
+              "installed": false
+            },
+            {
+              "name": "duckdb",
+              "version": "1.0.0",
+              "installed": false
+            },
+            {
+              "name": "pyarrow",
+              "version": "1.0.0",
+              "installed": false
+            },
+            {
+              "name": "statsmodels",
+              "version": "1.0.0",
+              "installed": false
+            },
+            {
+              "name": "optuna",
+              "version": "1.0.0",
+              "installed": false
+            }
+          ],
+          "blender": null,
+          "error": null,
+          "startedAt": "<time>",
+          "finishedAt": "<time>"
+        },
+        "error": null
+      }
+    ],
+    "inputs": [],
+    "inputsTruncated": false,
+    "workingDirectory": "/content/11111111-1111-4111-8111-111111111111",
+    "outputsDirectory": "/content/11111111-1111-4111-8111-111111111111/outputs",
+    "lastActivityAt": "<time>",
+    "lastTerminalAt": "<time>",
+    "idle": {
+      "milliseconds": "<time>",
+      "source": "production",
+      "since": "<time>"
+    },
+    "controlPending": false,
+    "structureVersion": 2,
+    "view": "full",
+    "cells": [
+      {
+        "id": "33333333-3333-4333-8333-333333333333",
+        "kind": "code",
+        "version": 1,
+        "position": 0,
+        "updatedBy": "assistant",
+        "updatedAt": "<time>",
+        "source": "x = 42\nprint(x)",
+        "lastRun": {
+          "id": "<uuid>",
+          "cellId": "33333333-3333-4333-8333-333333333333",
+          "cellVersion": 1,
+          "state": "ok",
+          "actor": "assistant",
+          "interruptRequested": false,
+          "artifactsState": "saved",
+          "artifactError": null,
+          "terminalAt": "<time>",
+          "createdAt": "<time>",
+          "updatedAt": "<time>",
+          "result": {
+            "protocol": 1,
+            "runId": "<uuid>",
+            "status": "ok",
+            "outputs": [
+              {
+                "output_type": "stream",
+                "name": "stdout",
+                "text": "42\n"
+              }
+            ],
+            "startedAt": "<time>",
+            "finishedAt": "<time>",
+            "executionCount": 1,
+            "truncated": false,
+            "artifacts": {
+              "files": [],
+              "errors": []
+            }
+          },
+          "error": null
+        }
+      }
+    ]
+  }
+}
