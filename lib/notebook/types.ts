@@ -6,10 +6,13 @@ export const MAX_NOTEBOOK_SOURCE = 400_000;
 export const OUTLINE_SOURCE_THRESHOLD = 60_000;
 export const OUTLINE_CELL_THRESHOLD = 60;
 export const MAX_DETAIL_CELLS = 40;
-export const MAX_OUTPUT_BYTES = 24_000;
-// JSON escaping of control characters can expand each output byte sixfold.
-export const MAX_RESULT_BYTES = 192_000;
-export const MAX_RETURN_OUTPUT_BYTES = 96_000;
+// PNG Base64 and text share this budget; text retains its smaller limit.
+export const MAX_OUTPUT_BYTES = 512 * 1024;
+export const MAX_TEXT_OUTPUT_BYTES = 24_000;
+// Allows sixfold text escaping and metadata, below D1's 2 MB row limit.
+export const MAX_RESULT_BYTES = 768 * 1024;
+export const MAX_RETURN_OUTPUT_BYTES = 2 * 1024 * 1024;
+export const MAX_EXPORT_OUTPUT_BYTES = 8 * 1024 * 1024;
 export const SHORT_REQUEST_MS = 30_000;
 export const SUBMIT_ACK_MS = 8_000;
 
@@ -67,4 +70,5 @@ export interface RunRow {
   interrupt_requested: number; created_at: number; updated_at: number;
   terminal_at: number | null; artifacts_state: "legacy" | "pending" | "saved" | "blocked" | "discarded";
   artifact_error_json: string | null;
+  result_omitted?: number;
 }

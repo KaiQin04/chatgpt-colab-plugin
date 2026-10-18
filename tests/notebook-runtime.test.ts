@@ -8,6 +8,9 @@ import { ColabClient } from "../lib/colab/client.ts";
 import type { Fetcher } from "../lib/platform/config.ts";
 import { safeError } from "../lib/platform/security.ts";
 import { ACCESS, json, PROXY } from "./helpers.ts";
+import { MAX_OUTPUT_BYTES, MAX_RESULT_BYTES } from "../lib/notebook/types.ts";
+import { requestJson } from "../lib/platform/network.ts";
+import { syntheticPng } from "./png-fixture.ts";
 
 const notebookId = "11111111-1111-4111-8111-111111111111";
 const runId = "22222222-2222-4222-8222-222222222222";
@@ -17,6 +20,22 @@ const row: RuntimeRow = { id: crypto.randomUUID(), notebook_id: notebookId, note
   requested_compute: "CPU", selected_accelerator: "CPU", machine_kind: "CPU", compute_verified: 1 };
 const payload = { protocol: 1, runId, status: "ok", outputs: [{ output_type: "stream", name: "stdout", text: "42\n" }],
   startedAt: 100, finishedAt: 200, executionCount: 1, truncated: false };
+
+test("PNG at the cell limit survives the Jupyter JSON envelope; generic HTTP stays bounded", async () => {
+  const png = syntheticPng();
+  // Whitespace is valid Base64; fill to the exact capture boundary.
+  const image = png + "\n".repeat(MAX_OUTPUT_BYTES - png.length);
+  const value = { ...payload, outputs: [{ output_type: "display_data", data: { "image/png": image }, metadata: {} }] };
+  const raw = JSON.stringify(value);
+  assert.ok(Buffer.byteLength(raw) < MAX_RESULT_BYTES);
+  const mock = remote({ size: Buffer.byteLength(raw), result: value });
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, mock.fetcher), mock.fetcher);
+  assert.deepEqual(await runtime.poll(row, runId, new AbortController().signal), value);
+  assert.throws(() => parseRunResult(JSON.stringify({ ...value, outputs: [{
+    output_type: "display_data", data: { "image/png": image + "\n" },
+  }] }), runId), /output_invalid/);
+  await assert.rejects(requestJson(async () => json({ content: raw }), "https://example.test", {}, "test"), /too_large/);
+});
 
 test("runtime result parsing drops oversized PNGs while preserving text and valid PNGs", () => {
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -48,7 +67,7 @@ class Socket extends EventTarget {
   }
   close(): void { this.closed = true; }
 }
-function remote(options: { unknown?: boolean; size?: number; missing?: boolean } = {}) {
+function remote(options: { unknown?: boolean; size?: number; missing?: boolean; result?: unknown } = {}) {
   const socket = new Socket(options.unknown);
   let assignments = 0, reads = 0;
   const calls: { path: string; method: string }[] = [];
@@ -68,7 +87,7 @@ function remote(options: { unknown?: boolean; size?: number; missing?: boolean }
       assert.equal(url.pathname, `/base/api/contents/${resultPath(notebookId, runId)}`);
       if (options.missing) return json({ error: "not_found" }, 404);
       if (url.searchParams.get("content") === "0") return json({ type: "file", size: options.size ?? 1000 });
-      reads++; return json({ type: "file", format: "text", content: JSON.stringify(payload) });
+      reads++; return json({ type: "file", format: "text", content: JSON.stringify(options.result ?? payload) });
     }
     if (url.pathname.endsWith("/interrupt")) return new Response(null, { status: 204 });
     throw new Error("unexpected_test_request");
@@ -117,7 +136,7 @@ test("poll refreshes proxy credentials from assignments for metadata and content
 });
 
 test("metadata size bounds stop file reads, missing files are pending, UUID-only paths", async () => {
-  const large = remote({ size: 192_001 }), runtime = new NotebookRuntime(new ColabClient(ACCESS, large.fetcher), large.fetcher);
+  const large = remote({ size: MAX_RESULT_BYTES + 1 }), runtime = new NotebookRuntime(new ColabClient(ACCESS, large.fetcher), large.fetcher);
   await assert.rejects(runtime.poll(row, runId, new AbortController().signal), /file_limit/);
   assert.equal(large.info().reads, 0);
   const missing = remote({ missing: true });

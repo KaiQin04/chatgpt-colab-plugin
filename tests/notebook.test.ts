@@ -5,6 +5,8 @@ import { notebookCall } from "../lib/notebook/service.ts";
 import { NotebookStore } from "../lib/notebook/store.ts";
 import { parseRunResult } from "../lib/notebook/runtime.ts";
 import type { RunResult, RuntimeRow } from "../lib/notebook/types.ts";
+import { MAX_RESULT_BYTES, MAX_RETURN_OUTPUT_BYTES, MAX_EXPORT_OUTPUT_BYTES } from "../lib/notebook/types.ts";
+import { syntheticPng } from "./png-fixture.ts";
 import { CPU_COMPUTE } from "../lib/notebook/compute.ts";
 import type { ComputeChoice, ObservedCompute } from "../lib/notebook/compute.ts";
 import type { InputFile, InputResult } from "../lib/notebook/inputs.ts";
@@ -466,13 +468,75 @@ test("ipynb attaches outputs only to their exact saved source version and preser
   } finally { f.close(); }
 });
 
+test("large PNG survives persistence, runtime close, document reload and ipynb export", async () => {
+  const f = await setup();
+  try {
+    const png = syntheticPng();
+    assert.ok(png.length > 377_000 && png.length < 512 * 1024);
+    await f.call("run_cell", runArgs);
+    const saved: RunResult = { ...result(f.remote.runId), outputs: [{
+      output_type: "display_data", data: { "image/png": png }, metadata: {},
+    }] };
+    f.remote.value = parseRunResult(JSON.stringify(saved), f.remote.runId);
+    await f.call("get_notebook", { notebookId });
+    const closed = await f.call("close_notebook", { notebookId });
+    assert.equal(closed.released, true); assert.equal(closed.outputsPersisted, true);
+    const reloaded = await f.call("get_notebook", { notebookId });
+    assert.equal((reloaded.notebook as any).cells[0].lastRun.result.outputs[0].data["image/png"], png);
+    const exported = await f.call("export_ipynb", { notebookId });
+    assert.equal((exported.ipynb as any).cells[0].outputs[0].data["image/png"], png);
+    assert.equal(f.remote.allocations, 1);
+  } finally { f.close(); }
+});
+
+test("document and export budgets omit whole outputs before D1 returns them; individual load still works", async () => {
+  const f = await setup();
+  try {
+    const png = syntheticPng();
+    const runtime = (await f.store.notebook(notebookId)).runtime_id!;
+    let selected = "";
+    for (let i = 0; i < 24; i++) {
+      const cell = crypto.randomUUID(), run = crypto.randomUUID();
+      if (i === 0) selected = run;
+      f.sqlite.prepare("INSERT INTO notebook_cells(id,notebook_id,kind,source,version,position,updated_at) VALUES(?,?,'code','image',1,?,1)")
+        .run(cell, notebookId, i + 1);
+      const value = { ...result(run), outputs: [{ output_type: "display_data", data: { "image/png": png }, metadata: {} }] };
+      f.sqlite.prepare(`INSERT INTO notebook_runs(id,notebook_id,runtime_id,cell_id,cell_version,request_key,source,actor,state,result_json,created_at,updated_at)
+        VALUES(?,?,?,?,1,?,'image','user','ok',?,?,1)`)
+        .run(run, notebookId, runtime, cell, run, JSON.stringify(value), i + 1);
+    }
+    const rows = await f.store.runs(notebookId, MAX_RETURN_OUTPUT_BYTES);
+    assert.ok(rows.some((run) => run.result_omitted === 1 && run.result_json === null));
+    assert.ok(rows.reduce((sum, run) => sum + Buffer.byteLength(run.result_json ?? ""), 0) <= MAX_RETURN_OUTPUT_BYTES);
+    const document = await f.call("get_notebook", { notebookId });
+    const cells = (document.notebook as any).cells;
+    assert.ok(cells.some((cell: any) => cell.lastRun?.outputsOmitted));
+    const detail = await f.call("get_notebook", { notebookId, runId: selected });
+    assert.equal((detail.run as any).result.outputs[0].data["image/png"], png);
+    const exported = await f.call("export_ipynb", { notebookId });
+    const exportedCells = (exported.ipynb as any).cells;
+    assert.ok(exportedCells.some((cell: any) => cell.metadata.colab_site.outputsOmitted && !cell.outputs.length));
+    assert.ok(exportedCells.filter((cell: any) => cell.outputs.length).length > cells.filter((cell: any) => cell.lastRun?.result).length);
+    assert.ok(exportedCells.reduce((sum: number, cell: any) => sum + Buffer.byteLength(JSON.stringify(cell.outputs)), 0) < MAX_EXPORT_OUTPUT_BYTES);
+  } finally { f.close(); }
+});
+
+test("storage rejects oversized serialized results before updating a run", async () => {
+  const f = await setup();
+  try {
+    await f.call("run_cell", runArgs);
+    await assert.rejects(f.store.updateRun(f.remote.runId, "ok", result(f.remote.runId, "ok", "x".repeat(MAX_RESULT_BYTES))), /result_limit/);
+    assert.equal((await f.store.run(f.remote.runId)).result_json, null);
+  } finally { f.close(); }
+});
+
 test("result limits accept worst-case JSON controls, reject oversize, and strip HTML", () => {
   const runId = crypto.randomUUID();
   const controls = result(runId, "ok", "\u0000".repeat(24_000));
   assert.ok(JSON.stringify(controls).length > 48_000);
   assert.equal(parseRunResult(JSON.stringify(controls), runId).outputs.length, 1);
   assert.throws(() => parseRunResult(JSON.stringify(result(runId, "ok", "中".repeat(9000))), runId), /output_limit/);
-  assert.throws(() => parseRunResult(" ".repeat(192_001), runId), /result_limit/);
+  assert.throws(() => parseRunResult(" ".repeat(MAX_RESULT_BYTES + 1), runId), /result_limit/);
   assert.throws(() => parseRunResult(JSON.stringify(controls), otherId), /result_invalid/);
   const display = { ...result(runId), outputs: [{ output_type: "display_data", data: { "text/html": "<script>bad</script>", "image/svg+xml": "bad", "text/plain": "safe" } }] };
   assert.deepEqual((parseRunResult(JSON.stringify(display), runId).outputs[0] as any).data, { "text/plain": "safe" });

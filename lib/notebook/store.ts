@@ -2,7 +2,7 @@
 import type { SpikeEnv } from "../platform/config.ts";
 import { SpikeError } from "../platform/security.ts";
 import { requireActive } from "../platform/deadline.ts";
-import { MAX_CELLS, MAX_NOTEBOOK_SOURCE } from "./types.ts";
+import { MAX_CELLS, MAX_NOTEBOOK_SOURCE, MAX_RESULT_BYTES } from "./types.ts";
 import type { CellRow, NotebookRow, RunResult, RunRow, RunState, RuntimeRow } from "./types.ts";
 import type { ComputeChoice, ObservedCompute } from "./compute.ts";
 import { inputName } from "./inputs.ts";
@@ -518,6 +518,10 @@ export class NotebookStore {
     error: Record<string, unknown> | null = null): Promise<void> {
     const row = await this.run(id);
     const now = Date.now();
+    const resultJson = result ? JSON.stringify(result) : null;
+    if (resultJson && new TextEncoder().encode(resultJson).byteLength > MAX_RESULT_BYTES) {
+      throw new SpikeError("run_result_limit_exceeded", "notebook");
+    }
     const terminal = result && result.status !== "running" ? result.finishedAt : null;
     if (result && result.status !== "running" && (terminal === null || terminal < row.created_at - 60_000 || terminal > now + 30_000)) {
       throw new SpikeError("run_terminal_clock_untrusted", "notebook");
@@ -529,9 +533,9 @@ export class NotebookStore {
           WHEN ?='incomplete' THEN 'discarded' WHEN ?='error' AND ? IS NULL THEN 'saved' ELSE artifacts_state END
         WHERE id=? AND state NOT IN ('ok','error','interrupted','incomplete')
         AND (? NOT IN ('submitted','unknown') OR state='dispatching')`)
-        .bind(state, result ? JSON.stringify(result) : null, error ? JSON.stringify(error) : null, now,
+        .bind(state, resultJson, error ? JSON.stringify(error) : null, now,
           terminal === null ? null : Math.max(row.created_at, Math.min(now, terminal)), state, state,
-          result ? JSON.stringify(result) : null, id, state),
+          resultJson, id, state),
       this.db.prepare(`UPDATE notebooks SET active_run_id=NULL,updated_at=? WHERE id=? AND owner_id=?
         AND active_run_id=? AND EXISTS(SELECT 1 FROM notebook_runs WHERE id=? AND state IN ('ok','error','interrupted','incomplete')
           AND artifacts_state IN ('saved','legacy','discarded'))`)
@@ -541,12 +545,22 @@ export class NotebookStore {
         .bind(row.notebook_id, this.ownerId),
     ]);
   }
-  async runs(id: string): Promise<RunRow[]> {
+  async runs(id: string, outputBudget: number): Promise<RunRow[]> {
     await this.notebook(id);
-    return (await this.db.prepare(`SELECT * FROM notebook_runs WHERE notebook_id=? AND id IN
+    // Apply the budget inside SQLite, before large JSON rows reach the Worker.
+    return (await this.db.prepare(`WITH latest AS (
+      SELECT *,rowid AS run_order FROM notebook_runs WHERE notebook_id=? AND id IN
       (SELECT (SELECT r.id FROM notebook_runs r WHERE r.cell_id=c.id AND r.notebook_id=c.notebook_id ORDER BY created_at DESC,rowid DESC LIMIT 1)
-       FROM notebook_cells c WHERE c.notebook_id=?) ORDER BY created_at DESC LIMIT ?`)
-      .bind(id, id, MAX_CELLS).all<RunRow>()).results;
+       FROM notebook_cells c WHERE c.notebook_id=?) ORDER BY created_at DESC,rowid DESC LIMIT ?
+      ), bounded AS (
+        SELECT *,SUM(COALESCE(length(CAST(result_json AS BLOB)),0))
+          OVER (ORDER BY created_at DESC,run_order DESC) AS result_bytes FROM latest
+      ) SELECT id,notebook_id,runtime_id,cell_id,cell_version,request_key,source,actor,state,
+        CASE WHEN result_bytes<=? THEN result_json ELSE NULL END AS result_json,
+        CASE WHEN result_bytes>? AND result_json IS NOT NULL THEN 1 ELSE 0 END AS result_omitted,
+        error_json,interrupt_requested,created_at,updated_at,terminal_at,artifacts_state,artifact_error_json
+        FROM bounded ORDER BY created_at DESC,run_order DESC`)
+      .bind(id, id, MAX_CELLS, outputBudget, outputBudget).all<RunRow>()).results;
   }
   async markInterrupt(id: string): Promise<void> {
     await this.run(id);

@@ -11,6 +11,7 @@ export function runView(row: RunRow, includeSource = false): RunView {
     terminalAt: row.terminal_at,
     createdAt: row.created_at, updatedAt: row.updated_at,
     result: row.result_json ? JSON.parse(row.result_json) : null,
+    ...(row.result_omitted ? { outputsOmitted: true } : {}),
     error: row.error_json ? JSON.parse(row.error_json) : null,
     ...(includeSource ? { source: row.source } : {}) };
 }

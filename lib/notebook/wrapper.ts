@@ -1,5 +1,5 @@
 /** No credentials enter this Python wrapper. Only UUIDs and saved cell source. */
-import { MAX_OUTPUT_BYTES } from "./types.ts";
+import { MAX_OUTPUT_BYTES, MAX_TEXT_OUTPUT_BYTES } from "./types.ts";
 import { MAX_ARTIFACT_FILES, MAX_ARTIFACT_FILE_BYTES, MAX_ARTIFACT_RUN_BYTES } from "./policy.ts";
 import { base64 } from "../platform/security.ts";
 
@@ -40,6 +40,7 @@ shell = globals()['get_ipython']()
 started = int(time.time() * 1000)
 outputs: list[dict[str, Any]] = []
 used = 0
+text_used = 0
 truncated = False
 last_write = 0.0
 execution_count = int(getattr(shell, 'execution_count', 0))
@@ -68,11 +69,13 @@ def save(status: str = 'running') -> None:
     last_write = time.monotonic()
 
 
-def clipped(text: Any) -> str:
+def clipped(text: Any, image: bool = False) -> str:
     """Consume the byte budget without encoding an unbounded input first."""
-    global used, truncated
+    global used, text_used, truncated
     value = str(text)
     remaining = max(0, ${MAX_OUTPUT_BYTES} - used)
+    if not image:
+        remaining = min(remaining, max(0, ${MAX_TEXT_OUTPUT_BYTES} - text_used))
     if len(value) > remaining:
         truncated = True
     data = value[:remaining].encode('utf-8', errors='replace')
@@ -81,6 +84,8 @@ def clipped(text: Any) -> str:
     data = data[:remaining]
     value = data.decode('utf-8', errors='ignore')
     used += len(value.encode('utf-8'))
+    if not image:
+        text_used += len(value.encode('utf-8'))
     return value
 
 
@@ -100,7 +105,7 @@ def capture(data: dict[str, Any], metadata: Any = None,
                         0, ${MAX_OUTPUT_BYTES} - used):
                     truncated = True
                     continue
-            value = clipped(data[mime])
+            value = clipped(data[mime], image=mime == 'image/png')
             if value:
                 safe[mime] = value
     if safe:

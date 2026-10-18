@@ -4,7 +4,7 @@ import type { Fetcher } from "../platform/config.ts";
 import { boundedStep, requireActive } from "../platform/deadline.ts";
 import { boundedRequest, requestJson } from "../platform/network.ts";
 import { SpikeError } from "../platform/security.ts";
-import { MAX_OUTPUT_BYTES, MAX_RESULT_BYTES, SUBMIT_ACK_MS } from "./types.ts";
+import { MAX_OUTPUT_BYTES, MAX_TEXT_OUTPUT_BYTES, MAX_RESULT_BYTES, SUBMIT_ACK_MS } from "./types.ts";
 import type { Output, RunResult, RuntimeRow } from "./types.ts";
 import { pythonWrapper, resultPath } from "./wrapper.ts";
 import { artifactManifest, artifactPath } from "./artifact-store.ts";
@@ -39,9 +39,13 @@ export function parseRunResult(raw: unknown, runId: string): RunResult {
     throw new SpikeError("run_result_invalid", "poll");
   }
   let bytes = 0;
-  const text = (input: unknown, max = MAX_OUTPUT_BYTES) => {
+  let textBytes = 0;
+  const text = (input: unknown, max = MAX_OUTPUT_BYTES, image = false) => {
     if (typeof input !== "string" || input.length > max) throw new SpikeError("run_output_invalid", "poll");
-    bytes += new TextEncoder().encode(input).length;
+    const size = new TextEncoder().encode(input).length;
+    bytes += size;
+    if (!image) textBytes += size;
+    if (textBytes > MAX_TEXT_OUTPUT_BYTES + 120) throw new SpikeError("run_output_limit_exceeded", "poll");
     if (bytes > MAX_OUTPUT_BYTES + 120) throw new SpikeError("run_output_limit_exceeded", "poll");
     return input;
   };
@@ -55,7 +59,7 @@ export function parseRunResult(raw: unknown, runId: string): RunResult {
       const data: Record<string, string> = {};
       if (Object.hasOwn(item.data, "text/plain")) data["text/plain"] = text(item.data["text/plain"]);
       if (Object.hasOwn(item.data, "image/png")) {
-        const png = text(item.data["image/png"]);
+        const png = text(item.data["image/png"], MAX_OUTPUT_BYTES, true);
         // PNG only, never SVG/HTML/remote resource URLs.
         if (/^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png) && base64PngWithinLimits(png)) data["image/png"] = png;
       }
@@ -130,14 +134,14 @@ export class NotebookRuntime {
     return proxyConfig(assignment);
   }
   async request(runtime: RuntimeRow, method: string, path: string, stage: string, signal: AbortSignal,
-    body?: unknown, query: Record<string, string> = {}): Promise<Record<string, unknown>> {
+    body?: unknown, query: Record<string, string> = {}, maxResponseBytes?: number): Promise<Record<string, unknown>> {
     if (!runtime.endpoint) throw new SpikeError("runtime_endpoint_unknown", stage, 409);
     const proxy = await this.proxy(runtime.endpoint, signal);
     requireActive(signal, stage);
     return boundedStep(stage, 5000, signal, (stepSignal) => requestJson(this.fetcher, proxyUrl(proxy.url, path, proxy.token, query), {
       method, headers: { "Content-Type": "application/json", "X-Colab-Runtime-Proxy-Token": proxy.token,
         "X-Colab-Client-Agent": AGENT }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    }, stage, { signal: stepSignal, timeoutMs: 5000 }));
+    }, stage, { signal: stepSignal, timeoutMs: 5000, maxResponseBytes }));
   }
   async startKernel(runtime: RuntimeRow, signal: AbortSignal): Promise<string> {
     const value = await this.request(runtime, "POST", "/api/kernels", "notebookKernelStart", signal, { name: "python3" });
@@ -229,7 +233,7 @@ export class NotebookRuntime {
       throw new SpikeError(...spec.limitError);
     }
     const file = await this.request(runtime, "GET", apiPath, spec.readStage, signal,
-      undefined, { content: "1", format: "text", type: "file" });
+      undefined, { content: "1", format: "text", type: "file" }, spec.maxBytes * 6 + 4096);
     if (file.type !== "file" || file.format !== "text") throw new SpikeError(...spec.invalidError);
     return file.content;
   }

@@ -1,7 +1,8 @@
 /** One self-contained, bounded editor used by both the Site and MCP Apps. */
 import { SITE_ORIGIN } from "../platform/config.ts";
+import { MAX_OUTPUT_BYTES } from "./types.ts";
 
-function editorBrowser(mode: "site" | "mcp", siteOrigin: string): void {
+function editorBrowser(mode: "site" | "mcp", siteOrigin: string, maxOutputBytes: number): void {
   type Value = Record<string, any>;
   const el = (id: string): any => document.getElementById(id)!;
   const object = (v: unknown): v is Value => Boolean(v && typeof v === "object" && !Array.isArray(v));
@@ -140,7 +141,7 @@ function editorBrowser(mode: "site" | "mcp", siteOrigin: string): void {
       else if (object(item.data)) {
         if (typeof item.data["text/plain"] === "string") text(parent, item.data["text/plain"].slice(0, 24_000));
         const png = item.data["image/png"];
-        if (typeof png === "string" && png.length <= 24_000 && /^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png) && base64PngWithinLimits(png)) {
+        if (typeof png === "string" && png.length <= maxOutputBytes && /^iVBORw0KGgo[A-Za-z0-9+/=\r\n]*$/.test(png) && base64PngWithinLimits(png)) {
           const image = document.createElement("img"); image.alt = "Cell 圖片輸出"; image.src = `data:image/png;base64,${png}`; parent.appendChild(image);
         }
       }
@@ -482,5 +483,5 @@ details{margin:16px 0;padding:14px;border:1px solid #d9e3ea;border-radius:9px}su
 <details id="artifact-details"><summary>成品（每頁最多 64 檔）</summary><p class="muted">寫入 outputs/；每檔最多 16 MiB，每次 run 合計 128 MiB／32 檔。預設保存 30 天，可永久保留。超限或未完整保存會阻止釋放。</p><div id="artifact-list"></div><button id="artifact-more" class="secondary" hidden>下一頁</button><div id="artifact-preview"></div></details>
 <details class="rescue"><summary>結果救援／明確放棄輸出</summary><p>若結果、附件或安裝尚未確認，正常關閉會保留 runtime；尚未送出的 pending 安裝可直接取消。請先更新或重試；只有接受遺失未保存內容／中止安裝時才使用下列操作。</p><label><input id="consent" type="checkbox">我接受未保存內容遺失／未完成安裝中止</label><p><button id="discard" class="danger" data-unavailable="true">放棄未保存內容並關閉</button></p></details></section>
 <details><summary>套件設定與連線</summary><p id="runtime-settings-version"></p><label>預裝套件（每行一個純 PyPI 名稱，最多 16 個）<textarea id="runtime-packages" rows="6" maxlength="1040" aria-label="預裝套件清單"></textarea></label><button id="runtime-settings-save" class="secondary">儲存下次準備清單</button><p><a href="${SITE_ORIGIN}/oauth/google/start" target="_top">重新授權 Google Colab</a></p><p class="muted">只支援 CPU 與 eligible GPU，不開 TPU。成品與閒置維護由每小時私人雲端排程執行，頁面輪詢不代表排程已執行。安裝不自動重試或更換版本；Markdown 與 HTML 不執行 HTML。</p></details>
-</main><script>(${editorBrowser.toString()})(${JSON.stringify(mode)},${JSON.stringify(SITE_ORIGIN)});</script></body></html>`;
+</main><script>(${editorBrowser.toString()})(${JSON.stringify(mode)},${JSON.stringify(SITE_ORIGIN)},${MAX_OUTPUT_BYTES});</script></body></html>`;
 }

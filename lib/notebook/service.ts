@@ -15,7 +15,7 @@ import type { SetupKind } from "./setup.ts";
 import { ArtifactStore, artifactPath } from "./artifact-store.ts";
 import { archiveRun, artifactView, previewArtifact } from "./artifacts.ts";
 import { effectiveIdlePolicy, idleSince } from "./policy.ts";
-import { MAX_RETURN_OUTPUT_BYTES, OUTLINE_CELL_THRESHOLD, OUTLINE_SOURCE_THRESHOLD, SHORT_REQUEST_MS, TERMINAL_RUNS } from "./types.ts";
+import { MAX_RETURN_OUTPUT_BYTES, MAX_EXPORT_OUTPUT_BYTES, OUTLINE_CELL_THRESHOLD, OUTLINE_SOURCE_THRESHOLD, SHORT_REQUEST_MS, TERMINAL_RUNS } from "./types.ts";
 import type { NotebookRow, RunResult, RunRow } from "./types.ts";
 import type { CellView, DocumentView, NotebookView } from "./contract.ts";
 import { runMaintenance } from "./maintenance.ts";
@@ -63,7 +63,7 @@ class NotebookService {
     shape: { view?: "auto" | "outline" | "full"; cellIds?: string[] } = {}): Promise<DocumentView> {
     const notebook = await this.step("notebookRead", async () => this.store.notebook(id));
     const cells = await this.step("notebookCells", async () => this.store.cells(id));
-    const runs = await this.step("notebookRuns", async () => this.store.runs(id));
+    const runs = await this.step("notebookRuns", async () => this.store.runs(id, MAX_RETURN_OUTPUT_BYTES));
     const runtime = notebook.runtime_id ? await this.step("notebookRuntime", async () => this.store.runtime(notebook.runtime_id!)) : null;
     const inputs = await this.step("notebookInputs", () => this.store.inputs(id));
     const setup = runtime ? await this.step("notebookSetupTasks", () => new SetupStore(this.env, this.ownerId).list(runtime.id)) : [];
@@ -467,8 +467,8 @@ class NotebookService {
     await this.step("notebookExportActivity", () => this.store.touch(id, this.now()));
     const notebook = await this.step("notebookRead", async () => this.store.notebook(id));
     const cells = await this.step("notebookCells", async () => this.store.cells(id));
-    const runs = await this.step("notebookRuns", async () => this.store.runs(id));
-    let remainingOutput = MAX_RETURN_OUTPUT_BYTES;
+    const runs = await this.step("notebookRuns", async () => this.store.runs(id, MAX_EXPORT_OUTPUT_BYTES));
+    let remainingOutput = MAX_EXPORT_OUTPUT_BYTES;
     const exported = cells.map((cell) => {
       const run = runs.find((row) => row.cell_id === cell.id && row.cell_version === cell.version);
       const result: RunResult | null = run?.result_json ? JSON.parse(run.result_json) : null;
@@ -478,7 +478,7 @@ class NotebookService {
       if (include) remainingOutput -= size;
       return { id: cell.id, cell_type: cell.kind, source: cell.source, metadata: {
         colab_site: { cellVersion: cell.version, ...(run ? { runId: run.id, runState: run.state } : {}),
-          ...(result && (!sameSource || !include) ? { outputsOmitted: true } : {}) },
+          ...(run?.result_omitted || result && (!sameSource || !include) ? { outputsOmitted: true } : {}) },
       }, ...(cell.kind === "code" ? { execution_count: include ? result.executionCount : null,
         outputs: include ? result.outputs : [] } : {}) };
     });

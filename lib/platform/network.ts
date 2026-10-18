@@ -39,7 +39,7 @@ export async function boundedRequest<T>(
   }
 }
 
-async function limitedText(response: Response): Promise<string> {
+async function limitedText(response: Response, maxBytes: number): Promise<string> {
   if (!response.body) return "";
   const reader = response.body.getReader();
   let size = 0;
@@ -49,7 +49,7 @@ async function limitedText(response: Response): Promise<string> {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 512 * 1024) {
+      if (size > maxBytes) {
         await reader.cancel();
         throw new SpikeError("upstream_response_too_large", "http");
       }
@@ -68,11 +68,12 @@ export async function requestJson(
   fetcher: Fetcher, url: URL | string, init: RequestInit, stage: string,
   options: {
     signal?: AbortSignal; timeoutMs?: number; onStatus?: (status: number) => void;
+    maxResponseBytes?: number;
   } = {},
 ): Promise<Record<string, unknown>> {
   return boundedRequest(fetcher, url, init, stage, async (response) => {
     options.onStatus?.(response.status);
-    let text = await limitedText(response);
+    let text = await limitedText(response, options.maxResponseBytes ?? 512 * 1024);
     if (text.startsWith(")]}'\n")) text = text.slice(5);
     let value: unknown;
     try { value = text.trim() ? JSON.parse(text) : {}; }
