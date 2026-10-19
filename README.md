@@ -8,6 +8,8 @@ Write, edit, and run Python notebooks from your ChatGPT conversation. Execution 
 
 Each user deploys a separate private backend, connects their own Google account through OAuth, and installs their own private plugin. You do not share the maintainer's Site, credentials, or compute credits.
 
+**Ask your dot to use Colab, too.** Once your private plugin is connected and available to your dot, ask it to create notebook cells, run Python, and retrieve results using your own Colab compute. [Try an example](#ask-your-dot-to-use-colab).
+
 > Unofficial, experimental integration. Not affiliated with Google or OpenAI. This repository is a self-deployment template, not a plugin already listed in the public directory.
 
 ## Screenshots
@@ -63,6 +65,16 @@ You can ask an agent with Sites access to guide you:
 > Read this repository's AGENTS.md, docs/DEPLOYMENT.en.md, docs/OAUTH.en.md, and skills/setup/SKILL.md. Deploy it to a new ChatGPT Site that only I can access, help me configure my own Google OAuth client, and connect my private plugin. I will enter credentials in the settings UI, not in chat. Start with checks that do not allocate a Colab runtime.
 
 Setup requires your participation in Google account authorization. A public directory installation does not automatically deploy a private backend for you. The notebook UI supports English and Traditional Chinese. It follows your browser language on the first visit; use the language selector on the home page or editor toolbar to switch. Your choice is remembered in this browser when storage is available.
+
+## Ask your dot to use Colab
+
+Complete the setup above, including Google OAuth and your private plugin connection. OpenAI documents that dots can use existing plugin connections within the permissions you have granted. When this plugin's notebook tools are available to your dot, you can ask it to operate Colab through those tools. [OpenAI's plugin permissions guide](https://help.openai.com/en/articles/20001529-dots-privacy-security-and-safety-faqs)
+
+For example:
+
+> Use my connected Colab plugin to create a new CPU notebook. Generate a small synthetic dataset, calculate summary statistics, and plot a histogram. Run the cells, retrieve the chart and notebook, then release the runtime created for this task after confirming the results are saved.
+
+The computation uses your Colab account and credits, with actions subject to your dot's permissions and approval settings.
 
 ## Local development
 

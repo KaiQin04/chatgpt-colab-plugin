@@ -6,6 +6,8 @@
 
 直接在 ChatGPT 對話中編寫、修改與執行 Python Notebook；程式在你自己的 Google Colab runtime 執行，使用自己帳號可用的運算資源與額度。你可以手動編輯並按 Shift＋Enter，也可以請 ChatGPT 操作 Notebook。每位使用者部署自己的私人後端、設定自己的 Google OAuth，不共用作者的 Site、憑證或額度。
 
+**也可以請你的 dot 使用 Colab。** 連接私人 Plugin，且 dot 能使用其工具後，就能請它建立 Notebook cell、執行 Python 並取得結果，使用你自己的 Colab 運算資源。[查看範例](#請你的-dot-使用-colab)。
+
 **非 Google 或 OpenAI 官方產品。此 repo 是可自行部署的實驗性整合，不是已上架的公開 Plugin，也不是共用運算服務。**
 
 ## 介面預覽
@@ -60,6 +62,16 @@ Your Google OAuth client -> Your Google account -> Your Colab runtime
 介面提供 English／繁體中文切換，首次依瀏覽器語言選擇；可從首頁或編輯器工具列切換，瀏覽器允許儲存時會記住選擇。
 
 Google 帳號授權與必要的設定仍需本人完成。這不是安裝後零設定的商店 Plugin。第一版不支援直接部署到一般 Cloudflare Worker 或任意 VPS；它依賴 Sites 的身分驗證邊界。
+
+## 請你的 dot 使用 Colab
+
+先完成上述部署、Google OAuth 授權與私人 Plugin 連接。OpenAI 官方說明 dot 可在你已授予的權限內使用既有 Plugin 連線；當 dot 能使用本 Plugin 的 Notebook 工具時，就可以請它透過工具操作 Colab。[OpenAI Plugin 權限說明](https://help.openai.com/en/articles/20001529-dots-privacy-security-and-safety-faqs)
+
+例如：
+
+> 請使用我已連接的 Colab Plugin，建立新的 CPU Notebook。產生一小份合成資料，計算摘要統計並繪製直方圖。執行 cell、取得圖表與 Notebook，確認結果已保存後，釋放這次任務建立的 runtime。
+
+運算使用你自己的 Colab 帳號與額度，操作仍依 dot 的權限與核准設定執行。
 
 ## 本機開發與驗證
 
