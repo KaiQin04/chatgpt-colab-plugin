@@ -8,7 +8,7 @@ import { MAX_OUTPUT_BYTES, MAX_TEXT_OUTPUT_BYTES, MAX_RESULT_BYTES, SUBMIT_ACK_M
 import type { Output, RunResult, RuntimeRow } from "./types.ts";
 import { pythonWrapper, resultPath } from "./wrapper.ts";
 import { artifactManifest, artifactPath } from "./artifact-store.ts";
-import { MAX_ARTIFACT_FILE_BYTES } from "./policy.ts";
+import { ARTIFACT_PART_BYTES, MAX_ARTIFACT_FILE_BYTES, SMALL_ARTIFACT_BYTES } from "./policy.ts";
 import { CPU_COMPUTE, observedCompute } from "./compute.ts";
 import type { ComputeChoice, ObservedCompute } from "./compute.ts";
 import type { ComputeInfo } from "../colab/client.ts";
@@ -22,6 +22,19 @@ import { base64PngWithinLimits } from "./png.ts";
 
 const AGENT = "colab-compute-mcp";
 interface Socket extends EventTarget { accept(): void; send(value: string): void; close(code?: number, reason?: string): void }
+
+/** Only the submission boundary may prove that execute_request was never attempted. */
+export class SubmissionNotSentError extends SpikeError {
+  constructor(error: unknown) {
+    const cause = error instanceof SpikeError ? error : new SpikeError("transport_failed", "submit");
+    super(cause.code, cause.stage, cause.httpStatus, cause.upstreamCode);
+    this.name = "SubmissionNotSentError";
+  }
+}
+
+function closeSocket(socket: Socket): void {
+  try { socket.close(1000, "submission finished"); } catch { /* Best-effort socket cleanup only. */ }
+}
 
 /** Revalidate remote files even though our own wrapper produced them: cell code can alter them. */
 export function parseRunResult(raw: unknown, runId: string): RunResult {
@@ -79,12 +92,13 @@ export function parseRunResult(raw: unknown, runId: string): RunResult {
 export class NotebookRuntime {
   constructor(readonly client: ColabClient, readonly fetcher: Fetcher) {}
 
-  async computeStatus(signal: AbortSignal): Promise<ComputeInfo & { assignmentCount: number }> {
+  async computeStatus(signal: AbortSignal): Promise<ComputeInfo & { assignmentCount: number; assignmentEndpoints: string[] }> {
     const info = await boundedStep("notebookComputeInfo", 5000, signal,
       (stepSignal) => this.client.computeInfo("notebookComputeInfo", stepSignal, 5000));
     const assignments = await boundedStep("notebookComputeAssignments", 5000, signal,
       (stepSignal) => this.client.assignments("notebookComputeAssignments", stepSignal, 5000));
-    return { ...info, assignmentCount: assignments.length };
+    if (assignments.length !== info.assignmentsCount) throw new SpikeError("assignments_snapshot_inconsistent", "compute", 409);
+    return { ...info, assignmentCount: assignments.length, assignmentEndpoints: assignments.map(row => row.endpoint) };
   }
 
   async allocate(hash: string, signal: AbortSignal, capture: (endpoint: string) => Promise<void>,
@@ -159,21 +173,42 @@ export class NotebookRuntime {
   async submitSetup(runtime: RuntimeRow, job: SetupRow, signal: AbortSignal): Promise<void> {
     return this.submitCode(runtime, setupWrapper(job), true, signal);
   }
+  private async connect(runtime: RuntimeRow, session: string, signal: AbortSignal): Promise<Socket> {
+    for (let attempt = 0; ; attempt++) {
+      // A handshake retry never resends Python. Refresh the proxy token on each attempt.
+      const proxy = await this.proxy(runtime.endpoint!, signal);
+      const url = proxyUrl(proxy.url, `/api/kernels/${encodeURIComponent(runtime.kernel_id!)}/channels`, proxy.token,
+        { session_id: session });
+      try {
+        return await boundedStep("notebookWsHandshake", 5000, signal, (stepSignal) => boundedRequest(this.fetcher, url, { headers: {
+          Upgrade: "websocket", "X-Colab-Runtime-Proxy-Token": proxy.token, "X-Colab-Client-Agent": AGENT,
+        } }, "notebookWsHandshake", async (response) => {
+          const ws = (response as unknown as { webSocket?: Socket }).webSocket;
+          // A fetch implementation can deliver an upgrade after its deadline. It must not leak a socket.
+          if (stepSignal.aborted || response.status !== 101 || !ws) {
+            if (ws) { try { ws.accept(); } catch { /* Still attempt close. */ } closeSocket(ws); }
+            requireActive(stepSignal, "notebookWsHandshake");
+            throw new SpikeError("websocket_upgrade_failed", "notebookWsHandshake", response.status);
+          }
+          return ws;
+        }, { signal: stepSignal, timeoutMs: 5000 }));
+      } catch (error) {
+        const transient = error instanceof SpikeError &&
+          (["step_timeout", "request_timeout", "transport_failed"].includes(error.code) ||
+            (error.code === "websocket_upgrade_failed" && [401, 403, 408, 429, 500, 502, 503, 504].includes(error.httpStatus ?? 0)));
+        if (attempt >= 1 || signal.aborted || !transient) throw error;
+      }
+    }
+  }
   private async submitCode(runtime: RuntimeRow, code: string, silent: boolean, signal: AbortSignal): Promise<void> {
-    if (!runtime.endpoint || !runtime.kernel_id) throw new SpikeError("runtime_not_ready", "submit", 409);
-    const proxy = await this.proxy(runtime.endpoint, signal);
-    const msgId = crypto.randomUUID();
-    const session = crypto.randomUUID();
-    const url = proxyUrl(proxy.url, `/api/kernels/${encodeURIComponent(runtime.kernel_id)}/channels`, proxy.token,
-      { session_id: session });
-    const socket = await boundedStep("notebookWsHandshake", 5000, signal, (stepSignal) => boundedRequest(this.fetcher, url, { headers: {
-      Upgrade: "websocket", "X-Colab-Runtime-Proxy-Token": proxy.token, "X-Colab-Client-Agent": AGENT,
-    } }, "notebookWsHandshake", async (response) => {
-      const ws = (response as unknown as { webSocket?: Socket }).webSocket;
-      if (response.status !== 101 || !ws) throw new SpikeError("websocket_upgrade_failed", "submit", response.status);
-      return ws;
-    }, { signal: stepSignal, timeoutMs: 5000 }));
+    let socket: Socket | undefined;
+    let sendAttempted = false;
     try {
+      if (!runtime.endpoint || !runtime.kernel_id) throw new SpikeError("runtime_not_ready", "submit", 409);
+      const msgId = crypto.randomUUID();
+      const session = crypto.randomUUID();
+      socket = await this.connect(runtime, session, signal);
+      const connected = socket;
       socket.accept();
       requireActive(signal, "submit");
       await new Promise<void>((resolve, reject) => {
@@ -182,9 +217,9 @@ export class NotebookRuntime {
           if (settled) return;
           settled = true; clearTimeout(timer);
           signal.removeEventListener("abort", abort);
-          socket.removeEventListener("message", message);
-          socket.removeEventListener("close", close);
-          socket.removeEventListener("error", failed);
+          connected.removeEventListener("message", message);
+          connected.removeEventListener("close", close);
+          connected.removeEventListener("error", failed);
           if (error) reject(error); else resolve();
         };
         const abort = () => finish(new SpikeError("dispatch_ack_unknown", "submit"));
@@ -203,22 +238,25 @@ export class NotebookRuntime {
         };
         const timer = setTimeout(() => finish(new SpikeError("dispatch_ack_unknown", "submit")), SUBMIT_ACK_MS);
         signal.addEventListener("abort", abort, { once: true });
-        socket.addEventListener("message", message);
-        socket.addEventListener("close", close);
-        socket.addEventListener("error", failed);
+        connected.addEventListener("message", message);
+        connected.addEventListener("close", close);
+        connected.addEventListener("error", failed);
         if (signal.aborted) { abort(); return; }
         try {
-          socket.send(JSON.stringify({ header: { msg_id: msgId, msg_type: "execute_request", session,
+          const request = JSON.stringify({ header: { msg_id: msgId, msg_type: "execute_request", session,
             username: AGENT, date: new Date().toISOString(), version: "5.3" },
           parent_header: {}, metadata: {}, channel: "shell", buffers: [], content: {
             code, silent, store_history: false,
             user_expressions: {}, allow_stdin: false, stop_on_error: true,
-          } }));
+          } });
+          // Even a throwing send may have queued bytes. From here on, only polling can resolve the outcome.
+          sendAttempted = true;
+          connected.send(request);
         } catch { finish(new SpikeError("dispatch_ack_unknown", "submit")); }
       });
-    } finally {
-      try { socket.close(1000, "submission acknowledged or unknown"); } catch { /* No background socket. */ }
-    }
+    } catch (error) {
+      throw sendAttempted ? error : new SubmissionNotSentError(error);
+    } finally { if (socket) closeSocket(socket); }
   }
   /** Read a small JSON result file the wrapper wrote; null while it does not exist yet. */
   async readResultFile(runtime: RuntimeRow, apiPath: string, signal: AbortSignal, spec: {
@@ -267,6 +305,19 @@ export class NotebookRuntime {
   }
   async readArtifact(runtime: RuntimeRow, relativePath: string, size: number,
     signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+    if (size > SMALL_ARTIFACT_BYTES) throw new SpikeError("artifact_file_too_large", "artifacts");
+    return this.readArtifactBytes(runtime, relativePath, size, 0, size, false, signal);
+  }
+  async readArtifactRange(runtime: RuntimeRow, relativePath: string, size: number,
+    offset: number, length: number, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) ||
+      length <= 0 || length > ARTIFACT_PART_BYTES || offset + length > size) {
+      throw new SpikeError("artifact_range_invalid", "artifacts");
+    }
+    return this.readArtifactBytes(runtime, relativePath, size, offset, length, true, signal);
+  }
+  private async readArtifactBytes(runtime: RuntimeRow, relativePath: string, size: number,
+    start: number, length: number, range: boolean, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
     artifactPath(relativePath);
     if (!Number.isSafeInteger(size) || size < 0 || size > MAX_ARTIFACT_FILE_BYTES || !runtime.endpoint) {
       throw new SpikeError("artifact_file_too_large", "artifacts");
@@ -280,22 +331,29 @@ export class NotebookRuntime {
     return boundedStep("artifactRead", 15_000, signal, (stepSignal) => boundedRequest(this.fetcher,
       proxyUrl(proxy.url, `/files/${path}`, proxy.token), { headers: {
         "X-Colab-Runtime-Proxy-Token": proxy.token, "X-Colab-Client-Agent": AGENT,
+        "Accept-Encoding": "identity", ...(range ? { Range: `bytes=${start}-${start + length - 1}` } : {}),
       } }, "artifactRead", async (response) => {
-        if (response.status !== 200 || !response.body) throw new SpikeError("artifact_read_http_error", "artifacts", response.status);
+        if (response.status !== (range ? 206 : 200) || !response.body ||
+          (range && response.headers.get("Content-Range") !== `bytes ${start}-${start + length - 1}/${size}`)) {
+          await response.body?.cancel();
+          throw new SpikeError(range ? "artifact_range_unsupported" : "artifact_read_http_error", "artifacts", 502);
+        }
         const declared = response.headers.get("Content-Length");
-        if (declared && Number(declared) > MAX_ARTIFACT_FILE_BYTES) throw new SpikeError("artifact_file_too_large", "artifacts");
-        const data = new Uint8Array(size);
+        if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) !== length)) {
+          await response.body.cancel(); throw new SpikeError("artifact_changed", "artifacts");
+        }
+        const data = new Uint8Array(length);
         const reader = response.body.getReader(); let offset = 0;
         try {
           while (true) {
             requireActive(stepSignal, "artifactRead");
             const chunk = await reader.read(); if (chunk.done) break;
-            if (offset + chunk.value.byteLength > size) throw new SpikeError("artifact_changed_or_too_large", "artifacts");
+            if (offset + chunk.value.byteLength > length) throw new SpikeError("artifact_changed_or_too_large", "artifacts");
             data.set(chunk.value, offset); offset += chunk.value.byteLength;
           }
         } catch (error) { await reader.cancel().catch(() => {}); throw error; }
         finally { reader.releaseLock(); }
-        if (offset !== size) throw new SpikeError("artifact_changed", "artifacts");
+        if (offset !== length) throw new SpikeError("artifact_changed", "artifacts");
         return data;
       }, { signal: stepSignal, timeoutMs: 15_000 }));
   }

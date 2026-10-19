@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createBridgeClient, createFetchClient, MCP_APPS_PROTOCOL } from "../lib/notebook/client.ts";
+import { createBridgeClient, createFetchClient, MCP_APPS_PROTOCOL, requestTimeoutMs } from "../lib/notebook/client.ts";
+import { artifactVerificationMs } from "../lib/notebook/policy.ts";
 import type { BridgeHost } from "../lib/notebook/client.ts";
+
+test("only artifact checkpoints allow long verification; compute operations keep their short budgets", () => {
+  assert.equal(artifactVerificationMs(1024 ** 3), 20_000);
+  assert.equal(artifactVerificationMs(1024 ** 3 + 1), 40_000);
+  assert.equal(artifactVerificationMs(10 * 1024 ** 3), 200_000);
+  for (const name of ["get_notebook", "get_artifacts", "close_notebook", "maintain_notebooks"]) {
+    assert.ok(requestTimeoutMs(name) > artifactVerificationMs(10 * 1024 ** 3) + 30_000);
+  }
+  for (const name of ["open_notebook", "run_cell", "prepare_runtime", "import_file"]) {
+    assert.equal(requestTimeoutMs(name), 55_000);
+  }
+});
 
 test("fetch client posts the tool envelope and maps failures to fixed codes", async () => {
   const seen: { url: string; body: unknown; credentials?: string }[] = [];

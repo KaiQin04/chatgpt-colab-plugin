@@ -11,6 +11,11 @@ export class ApiError extends Error {
   }
 }
 
+export function closeNeedsDiscard(error: unknown): boolean {
+  return error instanceof ApiError && (error.result?.outputsPersisted === false ||
+    ["runtime_setup_in_progress_or_unknown", "input_import_in_progress_or_unknown"].includes(error.code));
+}
+
 const FAILURE_KEYS = ["error", "pollError", "artifactError", "ledgerError", "cleanupError", "confirmationError"] as const;
 
 function failureCode(result: ToolResult): { code: string; stage: string } {
@@ -30,7 +35,9 @@ export type NotebookSummary = {
 };
 export type ComputeStatus = {
   currentBalance?: number; consumptionRateHourly?: number; estimatedHoursRemaining?: number | null;
-  balanceWarning?: boolean; eligibleGpus?: string[] | null; ownerRuntimeCount?: number; assignmentCount?: number;
+  balanceWarning?: boolean; eligibleGpus?: string[] | null; ownerRuntimeCount?: number | null; assignmentCount?: number;
+  ownerRuntimeUnknownCount?: number; runtimePresence?: "confirmed" | "unknown";
+  runtimePresenceObservedAt?: number | null;
   observedAt?: string;
   notebooks?: { id: string; title: string; state: string; idleForMs: number | null;
     runtime: { accelerator: string | null; selectedAccelerator: string | null; computeVerified: boolean } }[];
@@ -54,7 +61,7 @@ export class NotebookApi {
     }
     if (isFailure(result)) {
       const { code, stage } = failureCode(result);
-      if (allowPartial && result.notebook) return { ...result, warning: code };
+      if (allowPartial && (result.notebook || name === "get_compute_status")) return { ...result, warning: code };
       throw new ApiError(code, stage, result);
     }
     return result;
@@ -68,7 +75,7 @@ export class NotebookApi {
     return await this.call("get_notebook", { notebookId, view: "full", ...(runId ? { runId } : {}) }, true) as DocumentView & { warning?: string };
   }
   async compute(): Promise<ComputeStatus> {
-    return await this.call("get_compute_status", {}) as ComputeStatus;
+    return await this.call("get_compute_status", {}, true) as ComputeStatus;
   }
   async open(args: ToolArgs["open_notebook"]): Promise<DocumentView> {
     return await this.call("open_notebook", args, true) as DocumentView;

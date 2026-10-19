@@ -30,10 +30,11 @@ function editorBrowser(mode: "site" | "mcp", siteOrigin: string, maxOutputBytes:
     const e = v.error || v.pollError || v.ledgerError || v.cleanupError || v.confirmationError || v.artifactError;
     return object(e) ? `${String(e.code)} · ${String(e.stage)}` : v.released === false ? "release_unconfirmed" : null;
   }
+  const requestTimeout = (name: string) => ["get_notebook", "get_artifacts", "close_notebook", "maintain_notebooks"].includes(name) ? 240_000 : 55_000;
   function bridge(method: string, params: Value): Promise<Value> {
     return new Promise((resolve, reject) => {
       const id = ++next;
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error("bridge_timeout_unknown")); }, 55_000);
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error("bridge_timeout_unknown")); }, requestTimeout(String(params.name)));
       pending.set(id, { resolve, reject, timer });
       window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
     });
@@ -46,7 +47,7 @@ function editorBrowser(mode: "site" | "mcp", siteOrigin: string, maxOutputBytes:
       return response.structuredContent;
     }
     const controller = new AbortController(); requests.add(controller);
-    const timer = setTimeout(() => controller.abort(), 55_000);
+    const timer = setTimeout(() => controller.abort(), requestTimeout(name));
     try {
       const response = await fetch("/api/notebooks", { method: "POST", headers: { "Content-Type": "application/json" },
         credentials: "same-origin", body: JSON.stringify({ name, arguments: args }), signal: controller.signal });
@@ -480,7 +481,7 @@ details{margin:16px 0;padding:14px;border:1px solid #d9e3ea;border-radius:9px}su
 <details id="input-details"><summary>附件與 inputs/</summary><p id="input-host-note" class="muted"></p><div class="toolbar"><input id="input-file" type="file" aria-label="選擇一個附件"><button id="input-upload" class="secondary">匯入所選附件</button></div><small>每檔最多 128 MiB；相同檔名使用不同匯入目錄，不覆寫。檔案只保留在這台 runtime，關閉後不保留。</small><div id="input-list"></div><details><summary>進階／診斷：一次性網址匯入</summary><p class="muted">只用已授權附件的公開 HTTPS 暫時網址。送出立即清除網址；不寫入 cell、歷史或伺服器 metadata。已知過期失敗後填新網址重試；狀態不明時先更新。</p><div class="toolbar"><input id="input-id" placeholder="file_id" maxlength="160" autocomplete="off" aria-label="附件 file_id"><input id="input-name" placeholder="檔名（可略）" maxlength="180" autocomplete="off" aria-label="附件檔名"><input id="input-url" type="password" placeholder="temporary download_url" maxlength="8192" autocomplete="off" aria-label="附件一次性下載網址"><button id="input-import" class="secondary">匯入一次性網址</button></div></details></details>
 <div id="cells"></div><div class="toolbar"><button id="add-code" class="secondary">＋ 程式碼</button><button id="add-markdown" class="secondary">＋ Markdown</button></div><small>先儲存，再執行已儲存版本。Ctrl / ⌘ + Enter 執行；每次只送一格。錯誤與中斷結果會保留。</small>
 <details id="export-details"><summary>匯出檔案與 JSON</summary><p><a id="download" class="download" hidden>下載</a></p><textarea id="export-json" rows="8" readonly aria-label="ipynb JSON"></textarea></details>
-<details id="artifact-details"><summary>成品（每頁最多 64 檔）</summary><p class="muted">寫入 outputs/；每檔最多 16 MiB，每次 run 合計 128 MiB／32 檔。預設保存 30 天，可永久保留。超限或未完整保存會阻止釋放。</p><div id="artifact-list"></div><button id="artifact-more" class="secondary" hidden>下一頁</button><div id="artifact-preview"></div></details>
+<details id="artifact-details"><summary>成品（每頁最多 64 檔）</summary><p class="muted">寫入 outputs/；每檔最多 10 GiB，每次 run 合計 40 GiB／32 檔。預設保存 30 天，可永久保留。超限或未完整保存會阻止釋放。</p><div id="artifact-list"></div><button id="artifact-more" class="secondary" hidden>下一頁</button><div id="artifact-preview"></div></details>
 <details class="rescue"><summary>結果救援／明確放棄輸出</summary><p>若結果、附件或安裝尚未確認，正常關閉會保留 runtime；尚未送出的 pending 安裝可直接取消。請先更新或重試；只有接受遺失未保存內容／中止安裝時才使用下列操作。</p><label><input id="consent" type="checkbox">我接受未保存內容遺失／未完成安裝中止</label><p><button id="discard" class="danger" data-unavailable="true">放棄未保存內容並關閉</button></p></details></section>
 <details><summary>套件設定與連線</summary><p id="runtime-settings-version"></p><label>預裝套件（每行一個純 PyPI 名稱，最多 16 個）<textarea id="runtime-packages" rows="6" maxlength="1040" aria-label="預裝套件清單"></textarea></label><button id="runtime-settings-save" class="secondary">儲存下次準備清單</button><p><a href="${SITE_ORIGIN}/oauth/google/start" target="_top">重新授權 Google Colab</a></p><p class="muted">只支援 CPU 與 eligible GPU，不開 TPU。成品與閒置維護由每小時私人雲端排程執行，頁面輪詢不代表排程已執行。安裝不自動重試或更換版本；Markdown 與 HTML 不執行 HTML。</p></details>
 </main><script>(${editorBrowser.toString()})(${JSON.stringify(mode)},${JSON.stringify(SITE_ORIGIN)},${MAX_OUTPUT_BYTES});</script></body></html>`;

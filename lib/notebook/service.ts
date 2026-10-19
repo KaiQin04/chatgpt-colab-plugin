@@ -6,22 +6,23 @@ import { boundedStep, requireActive } from "../platform/deadline.ts";
 import { accessToken } from "../platform/oauth.ts";
 import { safeError, SpikeError } from "../platform/security.ts";
 import { Store } from "../platform/store.ts";
-import { NotebookRuntime } from "./runtime.ts";
+import { NotebookRuntime, SubmissionNotSentError } from "./runtime.ts";
 import { NotebookStore } from "./store.ts";
 import { selectCompute } from "./compute.ts";
 import { inputView, validateInputFile } from "./inputs.ts";
 import { SetupStore, setupView } from "./setup.ts";
 import type { SetupKind } from "./setup.ts";
-import { ArtifactStore, artifactPath } from "./artifact-store.ts";
+import { ArtifactStore, artifactPath, MACHINE_DOWNLOAD_HEADER } from "./artifact-store.ts";
 import { archiveRun, artifactView, previewArtifact } from "./artifacts.ts";
+import { deleteArtifactObject } from "./artifact-object.ts";
 import { effectiveIdlePolicy, idleSince } from "./policy.ts";
 import { MAX_RETURN_OUTPUT_BYTES, MAX_EXPORT_OUTPUT_BYTES, OUTLINE_CELL_THRESHOLD, OUTLINE_SOURCE_THRESHOLD, SHORT_REQUEST_MS, TERMINAL_RUNS } from "./types.ts";
-import type { NotebookRow, RunResult, RunRow } from "./types.ts";
-import type { CellView, DocumentView, NotebookView } from "./contract.ts";
+import type { NotebookRow, RunResult, RunRow, RuntimeRow } from "./types.ts";
+import type { ArtifactView, CellView, DocumentView, MachineDownloadView, NotebookView } from "./contract.ts";
 import { runMaintenance } from "./maintenance.ts";
 import { computeNotebookView, runtimeView, runView } from "./views.ts";
 
-type RuntimeOps = Pick<NotebookRuntime, "computeStatus" | "allocate" | "startKernel" | "submit" | "poll" | "submitInput" | "pollInput" | "submitSetup" | "pollSetup" | "interrupt" | "release" | "readArtifact">;
+type RuntimeOps = Pick<NotebookRuntime, "computeStatus" | "allocate" | "startKernel" | "submit" | "poll" | "submitInput" | "pollInput" | "submitSetup" | "pollSetup" | "interrupt" | "release" | "readArtifact"> & Partial<Pick<NotebookRuntime, "readArtifactRange">>;
 export interface ServiceOptions {
   fetcher?: Fetcher; signal?: AbortSignal; actor?: "user" | "assistant";
   runtimeFactory?: (client: ColabClient, fetcher: Fetcher) => RuntimeOps;
@@ -33,9 +34,12 @@ class NotebookService {
   readonly controller = new AbortController();
   readonly started = performance.now();
   readonly fetcher: Fetcher;
-  readonly timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout>;
+  deadline = this.started + SHORT_REQUEST_MS;
   readonly abort = () => this.controller.abort();
   bridge?: RuntimeOps;
+  presenceSnapshot?: Promise<{ info: Omit<Awaited<ReturnType<RuntimeOps["computeStatus"]>>, "assignmentEndpoints">;
+    endpoints: string[]; observedAt: number; startedAt: number }>;
   constructor(readonly env: SpikeEnv, readonly ownerId: string, readonly options: ServiceOptions) {
     this.store = new NotebookStore(env, ownerId);
     this.fetcher = options.fetcher ?? fetch;
@@ -44,7 +48,15 @@ class NotebookService {
     if (options.signal?.aborted) this.abort();
   }
   dispose(): void { clearTimeout(this.timer); this.options.signal?.removeEventListener("abort", this.abort); }
-  remaining(): number { return SHORT_REQUEST_MS - (performance.now() - this.started); }
+  remaining(): number { return this.deadline - performance.now(); }
+  /** Only a completed large object may extend the usual short request. */
+  reserveVerification = (ms: number): void => {
+    requireActive(this.controller.signal, "artifactVerify");
+    if (ms <= 20_000) return;
+    this.deadline = Math.max(this.deadline, performance.now() + ms + 10_000);
+    clearTimeout(this.timer);
+    this.timer = setTimeout(this.abort, this.remaining());
+  };
   now = (): number => (this.options.now ?? Date.now)();
   step<T>(name: string, work: (signal: AbortSignal) => Promise<T>, ms = 2000): Promise<T> {
     return boundedStep(name, Math.min(ms, this.remaining()), this.controller.signal, work);
@@ -58,6 +70,44 @@ class NotebookService {
       this.bridge = this.options.runtimeFactory?.(client, this.fetcher) ?? new NotebookRuntime(client, this.fetcher);
     }
     return this.bridge;
+  }
+  presence() {
+    return this.presenceSnapshot ??= (async () => {
+      const startedAt = this.now();
+      try {
+        const { assignmentEndpoints, ...info } = await (await this.remote()).computeStatus(this.controller.signal);
+        if (!Array.isArray(assignmentEndpoints) || assignmentEndpoints.length !== info.assignmentsCount ||
+          info.assignmentCount !== info.assignmentsCount || new Set(assignmentEndpoints).size !== assignmentEndpoints.length) {
+          throw new SpikeError("assignments_snapshot_inconsistent", "compute", 409);
+        }
+        return { info, endpoints: assignmentEndpoints, observedAt: this.now(), startedAt };
+      } catch (error) {
+        // A cancelled/expired query invalidates prior absence evidence too. Finalize
+        // independently of its request signal/budget, with a separate bounded wait.
+        await boundedStep("runtimeAbsenceReset", 2000, undefined,
+          () => this.store.resetRuntimeAbsences(startedAt)).catch(() => {});
+        throw error;
+      }
+    })();
+  }
+  async reconcileRuntime(runtime: RuntimeRow): Promise<void> {
+    // In-flight allocation and unknown endpoints never provide evidence of absence.
+    if (runtime.released || runtime.state === "opening" || !runtime.endpoint) return;
+    const snapshot = await this.presence();
+    const present = snapshot.endpoints.includes(runtime.endpoint);
+    const recorded = await this.step("runtimePresenceSave", () => this.store.observeRuntime(runtime, present, snapshot.observedAt, snapshot.startedAt));
+    if (!present && recorded.assignment_missing_since != null &&
+      snapshot.startedAt - recorded.assignment_missing_since >= 15_000) {
+      await this.step("runtimeAbsenceConfirm", () => this.store.finishRuntime(runtime.id, true,
+        { code: "runtime_missing_on_provider", stage: "reconcile" },
+        { observedAt: snapshot.observedAt, startedAt: snapshot.startedAt, endpoint: runtime.endpoint! }));
+    }
+  }
+  async reconcileNotebook(notebook: NotebookRow): Promise<void> {
+    if (notebook.runtime_id && notebook.state !== "closed") {
+      const runtime = await this.step("runtimePresenceRead", () => this.store.runtime(notebook.runtime_id!));
+      await this.reconcileRuntime(runtime);
+    }
   }
   async document(id: string, selectedRunId?: string,
     shape: { view?: "auto" | "outline" | "full"; cellIds?: string[] } = {}): Promise<DocumentView> {
@@ -123,7 +173,7 @@ class NotebookService {
         const recorded = await this.step("notebookArtifactRun", async () => this.store.run(run.id));
         if (archiveAllowed && !["saved", "legacy", "discarded"].includes(recorded.artifacts_state)) {
           const archived = await archiveRun(this.env, this.ownerId, recorded, runtime, remote,
-            this.controller.signal, this.now);
+            this.controller.signal, this.now, this.reserveVerification);
           if (archived.error) throw new SpikeError(String(archived.error.code), "artifacts");
         }
       }
@@ -142,7 +192,9 @@ class NotebookService {
         state: row.state, activeRunId: row.active_run_id, activeSetupId: row.active_setup_id, updatedAt: row.updated_at })) };
     }
     const id = args.notebookId as string;
-    const row = await this.step("notebookRead", async () => this.store.notebook(id));
+    let row = await this.step("notebookRead", async () => this.store.notebook(id));
+    try { await this.reconcileNotebook(row); } catch { /* An unavailable provider never proves release. */ }
+    row = await this.step("notebookPresenceReadback", () => this.store.notebook(id));
     let pollError: Record<string, unknown> | undefined;
     if (row.active_setup_id) {
       try { await this.advanceSetup(row); } catch (error) { pollError = safeError(error); }
@@ -171,13 +223,20 @@ class NotebookService {
     ));
     const input = reserved.input;
     if (!reserved.cached) {
+      let state: "error" | "unknown" | "submitted" = "error";
       let error: Record<string, unknown> | null = null;
       try {
         const runtime = await this.step("notebookInputRuntime", () => this.store.runtime(input.runtime_id));
-        await (await this.remote()).submitInput(runtime, input.id, file, this.controller.signal);
-      } catch (caught) { error = safeError(caught); }
+        const bridge = await this.remote();
+        state = "unknown";
+        await bridge.submitInput(runtime, input.id, file, this.controller.signal);
+        state = "submitted";
+      } catch (caught) {
+        if (caught instanceof SubmissionNotSentError) state = "error";
+        error = { ...safeError(caught), ...(state === "error" ? { dispatch: "not_sent" } : {}) };
+      }
       await boundedStep("notebookInputSubmitted", 2000, undefined,
-        () => this.store.updateInput(input.id, error ? "unknown" : "submitted", null, error));
+        () => this.store.updateInput(input.id, state, null, error));
     }
     const stored = await this.step("notebookInputReadback", () => this.store.input(input.id));
     return { cached: reserved.cached, input: inputView(stored, input.runtime_id),
@@ -263,26 +322,48 @@ class NotebookService {
     const runtime = await this.step("runtimeSetupRuntime", () => this.store.runtime(task.runtime_id));
     if (task.state === "pending") {
       if (!allowDispatch || !await this.step("runtimeSetupClaim", () => store.claim(task.id))) return;
+      let state: "error" | "unknown" | "submitted" = "error";
       let error: Record<string, unknown> | null = null;
-      try { await (await this.remote()).submitSetup(runtime, task, this.controller.signal); }
-      catch (caught) { error = safeError(caught); }
+      try {
+        const bridge = await this.remote();
+        state = "unknown";
+        await bridge.submitSetup(runtime, task, this.controller.signal);
+        state = "submitted";
+      } catch (caught) {
+        if (caught instanceof SubmissionNotSentError) state = "error";
+        error = { ...safeError(caught), ...(state === "error" ? { dispatch: "not_sent" } : {}) };
+      }
       await boundedStep("runtimeSetupSubmitted", 2000, undefined,
-        () => store.update(task.id, error ? "unknown" : "submitted", null, error));
+        () => store.update(task.id, state, null, error));
       return;
     }
     const result = await (await this.remote()).pollSetup(runtime, task, this.controller.signal);
     if (result) await this.step("runtimeSetupResult", () => store.update(task.id, result.status, result));
   }
   async compute(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const afterId = (args.afterNotebookId as string | undefined) ?? "";
+    let snapshot: Awaited<ReturnType<NotebookService["presence"]>> | undefined;
+    let error: Record<string, unknown> | undefined;
+    let reconciliationWarning: Record<string, unknown> | undefined;
+    try { snapshot = await this.presence(); } catch (caught) { error = safeError(caught); }
+    if (snapshot) {
+      try {
+        const runtimes = await this.step("runtimePresencePage", () => this.store.presenceRuntimes(afterId));
+        for (const runtime of runtimes) await this.reconcileRuntime(runtime);
+      } catch (caught) { reconciliationWarning = safeError(caught); }
+    }
     const page = await this.step("notebookComputePage", () => this.store.computePage((args.afterNotebookId as string | undefined) ?? ""));
-    const total = await this.step("notebookComputeCount", () => this.store.liveCount());
+    const counts = await this.step("notebookPresenceCount", () => this.store.presenceCounts(snapshot?.endpoints ?? [], snapshot?.startedAt ?? 0));
     const safe = { notebooks: page.slice(0, 30).map((row) => computeNotebookView(row, this.now())),
-      ownerRuntimeCount: total, hasMore: page.length > 30,
+      ownerRuntimeCount: snapshot ? counts.confirmed : null,
+      ownerRuntimeUnknownCount: counts.retained - (snapshot ? counts.confirmed : 0),
+      retainedRuntimeCount: counts.retained, runtimePresence: snapshot ? "confirmed" : "unknown",
+      runtimePresenceObservedAt: snapshot?.observedAt ?? null,
+      ...(reconciliationWarning ? { reconciliationWarning } : {}), hasMore: page.length > 30,
       nextAfterNotebookId: page.length > 30 ? page[29].id : null,
       serverRuntimeCap: null, queueEnabled: false, tpuSupported: false };
-    let info: Awaited<ReturnType<RuntimeOps["computeStatus"]>>;
-    try { info = await (await this.remote()).computeStatus(this.controller.signal); }
-    catch (error) { return { ...safe, error: safeError(error) }; }
+    if (!snapshot) return { ...safe, error };
+    const info = snapshot.info;
     try {
       await this.step("notebookComputeStatusSave", () => new Store(this.env).saveStatus(this.ownerId, { ...info }));
       return { ...safe, ...info };
@@ -332,6 +413,13 @@ class NotebookService {
       }
     }
     // A notebook already marked deleting resumes here after an interrupted attempt.
+    const multipart = await this.step("notebookMultipartUploads", () => this.store.multipartArtifacts(id));
+    if (multipart.length && !this.env.BUCKET) throw new SpikeError("artifact_bucket_missing", "delete");
+    for (const row of multipart) {
+      await this.step("notebookAbortUpload", () => deleteArtifactObject(this.env.BUCKET!, row), 5000);
+      // Persist cleanup so retries do not revisit every previously aborted upload.
+      await this.step("notebookUploadDeleted", () => this.store.multipartDeleted(row.id));
+    }
     const keys = await this.step("notebookArtifactKeys", () => this.store.artifactKeys(id));
     if (keys.length && !this.env.BUCKET) throw new SpikeError("artifact_bucket_missing", "delete");
     for (let offset = 0; offset < keys.length; offset += 1000) {
@@ -350,7 +438,7 @@ class NotebookService {
     const run = reserved.run;
     if (reserved.cached) return { cached: true, run: runView(run), notebookId: run.notebook_id,
       ...(run.error_json ? { error: JSON.parse(run.error_json) } : {}) };
-    let state: "submitted" | "unknown" | "error" = "unknown";
+    let state: "submitted" | "unknown" | "error" = "error";
     let error: Record<string, unknown> | null = null;
     try {
       // A narrow policy check, not a sandbox for arbitrary Python.
@@ -360,9 +448,13 @@ class NotebookService {
       const runtime = await this.step("notebookRuntime", async () => this.store.runtime(run.runtime_id));
       const bridge = await this.remote();
       requireActive(this.controller.signal, "notebookSubmit");
+      state = "unknown";
       await bridge.submit(runtime, run.id, run.source, this.controller.signal);
       state = "submitted";
-    } catch (caught) { error = safeError(caught); }
+    } catch (caught) {
+      if (caught instanceof SubmissionNotSentError) state = "error";
+      error = { ...safeError(caught), ...(state === "error" ? { dispatch: "not_sent" } : {}) };
+    }
     try {
       // Independent finalization records unknown even when the request deadline expired.
       await boundedStep("notebookSubmissionResult", 2000, undefined,
@@ -388,7 +480,10 @@ class NotebookService {
     return { interruptRequested: true, ...await this.document(notebook.id) };
   }
   async close(args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const before = await this.step("notebookCloseInput", () => this.store.notebook(args.notebookId as string));
+    let before = await this.step("notebookCloseInput", () => this.store.notebook(args.notebookId as string));
+    try { await this.reconcileNotebook(before); } catch { /* Preserve-close guards remain in force without provider evidence. */ }
+    before = await this.step("notebookClosePresenceReadback", () => this.store.notebook(before.id));
+    if (before.state === "closed") return { released: true, cached: true, ...await this.document(before.id) };
     if (before.state === "opening" && await this.step("notebookCancelStaleOpen", (signal) => this.store.cancelStaleOpen(before, this.now(), signal))) {
       return { released: true, reservationCancelled: true, allocationNotStarted: true,
         releaseRequired: false, ...await this.document(before.id) };
@@ -507,7 +602,7 @@ class NotebookService {
       const view = artifactView(row);
       if (args.artifactId && row.state === "ready") {
         const download = await this.step("artifactDownloadLink", () => store.downloadToken(row.id, this.now()));
-        await this.step("artifactDownloadActivity", () => this.store.touch(id, this.now()));
+        view.machineDownload = (await this.createDownload({ artifactId: row.id })).download;
         view.downloadUrl = `${SITE_ORIGIN}/api/artifacts/${row.id}?token=${encodeURIComponent(download.token)}`;
         view.downloadExpiresAt = download.expiresAt;
         view.previewDataUrl = await previewArtifact(this.env, row, this.controller.signal);
@@ -515,6 +610,19 @@ class NotebookService {
       views.push(view);
     }
     return { notebookId: id, artifacts: views, hasMore, nextBeforeId, ...(artifactError ? { artifactError } : {}) };
+  }
+  async createDownload(args: Record<string, unknown>): Promise<{ artifact: ArtifactView; download: MachineDownloadView }> {
+    const store = new ArtifactStore(this.env, this.ownerId);
+    const id = args.artifactId as string;
+    const grant = await this.step("artifactMachineGrant", () => store.downloadToken(id, this.now(), "machine"));
+    const row = await this.step("artifactRead", () => store.artifact(id));
+    await this.step("artifactDownloadActivity", () => this.store.touch(row.notebook_id, this.now()));
+    return { artifact: artifactView(row), download: {
+      url: `${SITE_ORIGIN}/api/artifacts/${row.id}/machine`,
+      headers: { [MACHINE_DOWNLOAD_HEADER]: grant.token }, expiresAt: grant.expiresAt,
+      serviceAccessRequired: true, serviceAccessHeader: "OAI-Sites-Authorization",
+      redirectPolicy: "error", etag: `"${row.sha256}"`, supportsRange: true,
+    } };
   }
   async pin(args: Record<string, unknown>): Promise<Record<string, unknown>> {
     const row = await this.step("artifactPin", () => new ArtifactStore(this.env, this.ownerId)
@@ -549,6 +657,7 @@ export async function notebookCall(name: string, args: Record<string, unknown>, 
       case "close_notebook": return await service.close(args);
       case "export_ipynb": return await service.export(args);
       case "get_artifacts": return await service.artifacts(args);
+      case "create_artifact_download": return await service.createDownload(args);
       case "pin_artifact": return await service.pin(args);
       case "maintain_notebooks": return await service.maintenance();
       default: throw new SpikeError("unknown_notebook_tool", "notebook", 400);

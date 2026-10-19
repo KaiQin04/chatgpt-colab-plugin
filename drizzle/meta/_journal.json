@@ -78,6 +78,20 @@
       "when": 1792170277829,
       "tag": "0010_icy_pestilence",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792237788007,
+      "tag": "0011_fat_spirit",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792338793511,
+      "tag": "0012_ordinary_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

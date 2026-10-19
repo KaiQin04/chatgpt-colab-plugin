@@ -87,6 +87,8 @@ export const notebookRuntimes = sqliteTable("notebook_runtimes", {
   selectedAccelerator: text("selected_accelerator"),
   machineKind: text("machine_kind").notNull().default("CPU"),
   computeVerified: integer("compute_verified").notNull().default(0),
+  assignmentCheckedAt: integer("assignment_checked_at"),
+  assignmentMissingSince: integer("assignment_missing_since"),
   createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull(),
 }, (table) => [uniqueIndex("notebook_open_idempotency").on(table.ownerId, table.requestKey),
   uniqueIndex("notebook_live_runtime").on(table.notebookId).where(sql`${table.released}=0`),
@@ -109,6 +111,9 @@ export const notebookArtifacts = sqliteTable("notebook_artifacts", {
   sha256: text("sha256").notNull(), objectKey: text("object_key").notNull(), mediaType: text("media_type").notNull(),
   state: text("state").notNull(), permanent: integer("permanent").notNull().default(0),
   createdAt: integer("created_at").notNull(), savedAt: integer("saved_at"), expiresAt: integer("expires_at"),
+  uploadId: text("upload_id"), uploadedPartsJson: text("uploaded_parts_json").notNull().default("[]"),
+  uploadLeaseToken: text("upload_lease_token"), uploadLeaseExpiresAt: integer("upload_lease_expires_at").notNull().default(0),
+  storageVersion: text("storage_version"),
 }, (table) => [uniqueIndex("notebook_artifact_run_path").on(table.runId, table.path)]);
 export const artifactDownloads = sqliteTable("artifact_downloads", {
   tokenHash: text("token_hash").primaryKey(), artifactId: text("artifact_id").notNull(),

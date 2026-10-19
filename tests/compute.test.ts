@@ -8,6 +8,20 @@ import type { Fetcher } from "../lib/platform/config.ts";
 import { safeError } from "../lib/platform/security.ts";
 import { ACCESS, json, PROXY } from "./helpers.ts";
 
+test("compute snapshots reject partial, duplicate or inconsistent assignment listings", async () => {
+  for (const listing of [
+    { assignments: [], hasMore: true },
+    { assignments: [], nextPageToken: "page-2" },
+    { assignments: [{ endpoint: "same" }, { endpoint: "same" }] },
+    { assignments: [] },
+  ]) {
+    const fetcher: Fetcher = async input => new URL(String(input)).pathname.endsWith("ccu-info")
+      ? json({ currentBalance: 100, consumptionRateHourly: 0, assignmentsCount: 2 }) : json(listing);
+    const remote = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+    await assert.rejects(remote.computeStatus(new AbortController().signal), /assignments_/);
+  }
+});
+
 test("dynamic GPU eligibility, explicit TPU rejection and deterministic pre-allocation AUTO", () => {
   assert.deepEqual(selectCompute("CPU", null), { kind: "CPU", accelerator: "CPU" });
   for (const gpu of ["G4", "A100", "L4", "T4", "H100", "FUTURE_GPU"]) {

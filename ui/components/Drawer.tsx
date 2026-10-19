@@ -29,12 +29,20 @@ export function Drawer(props: {
   const lastTerminalAt = notebook.lastTerminalAt;
   // Reload when the tab opens, the notebook changes, or a run finishes (lastTerminalAt).
   useEffect(() => {
-    if (tab !== "artifacts") return;
+    if (tab !== "artifacts" || !props.open) return;
     let alive = true;
-    api.artifacts(notebook.id).then((value) => { if (alive) setArtifacts(value.artifacts); },
-      (error) => notify(describe(error, locale), true));
-    return () => { alive = false; };
-  }, [tab, api, notebook.id, lastTerminalAt, notify, locale]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      try {
+        const value = await api.artifacts(notebook.id);
+        if (!alive) return;
+        setArtifacts(value.artifacts);
+        if (value.artifacts.some((row) => row.state === "pending")) timer = setTimeout(refresh, 3000);
+      } catch (error) { if (alive) notify(describe(error, locale), true); }
+    };
+    void refresh();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [tab, api, notebook.id, lastTerminalAt, notify, locale, props.open, notebook.activeRunId]);
   useEffect(() => {
     if (tab !== "packages" || settings) return;
     let alive = true;
@@ -99,6 +107,8 @@ export function Drawer(props: {
             <div className="row-name">{row.path}</div>
             <div className="row-meta">{formatBytes(row.size)} · {row.permanent ? t("Keep permanently") : row.expiresAt ? t("Kept until {date}", { date: new Date(row.expiresAt).toLocaleDateString(locale, { month: "long", day: "numeric" }) }) : row.state}</div>
             <div className="row-meta num">sha256 {row.sha256.slice(0, 4)}…{row.sha256.slice(-4)}</div>
+            {row.progress && <div className="row-meta">{row.progress.phase === "verifying" ? t("Verifying saved file")
+              : t("Saving {saved} / {total}", { saved: formatBytes(row.progress.uploadedBytes), total: formatBytes(row.progress.totalBytes) })}</div>}
             {preview[row.id] && <img className="preview-img" src={preview[row.id]!} alt={t("Preview of {path}", { path: row.path })} />}
             <div className="row-actions">
               <button type="button" className="btn btn-secondary" disabled={row.state !== "ready"} onClick={() => void download(row)}>{t("Download")}</button>

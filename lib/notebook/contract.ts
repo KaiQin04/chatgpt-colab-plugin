@@ -56,12 +56,20 @@ export type SetupView = {
   packages: string[]; result: Record<string, unknown> | null; error: ErrorView | null;
 };
 
+export type MachineDownloadView = {
+  url: string; headers: Record<string, string>; expiresAt: number;
+  serviceAccessRequired: true; serviceAccessHeader: "OAI-Sites-Authorization";
+  redirectPolicy: "error"; etag: string; supportsRange: true;
+};
+
 export type ArtifactView = {
   id: string; notebookId: string; runId: string; path: string; size: number;
   sha256: string; state: string; mediaType: string; permanent: boolean;
   savedAt: number | null; expiresAt: number | null;
   /** Present only when one ready artifact is requested by artifactId. */
   downloadUrl?: string; downloadExpiresAt?: number; previewDataUrl?: string | null;
+  machineDownload?: MachineDownloadView;
+  progress?: { uploadedBytes: number; totalBytes: number; phase: "uploading" | "verifying" };
 };
 
 export type IdleView = { milliseconds: number; source: "production"; since: number };
@@ -132,6 +140,7 @@ export type ToolArgs = {
   close_notebook: NotebookRef & { discardOutputs?: boolean };
   export_ipynb: NotebookRef;
   get_artifacts: NotebookRef & { runId?: string; artifactId?: string; beforeId?: string; path?: string };
+  create_artifact_download: { artifactId: string };
   pin_artifact: { artifactId: string; permanent: boolean };
   maintain_notebooks: Record<string, never>;
 };

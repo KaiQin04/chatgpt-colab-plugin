@@ -49,15 +49,18 @@ export class ColabClient {
 
   async assignments(stage: string, signal?: AbortSignal, timeoutMs?: number): Promise<Assignment[]> {
     const payload = await this.request("GET", "/tun/m/assignments", stage, { signal, timeoutMs });
-    if (!Array.isArray(payload.assignments)) {
+    if (!Array.isArray(payload.assignments) || payload.hasMore || payload.nextPageToken || payload.next_page_token) {
       throw new SpikeError("assignments_shape_invalid", stage);
     }
+    const seen = new Set<string>();
     return payload.assignments.map((value: unknown) => {
       if (!value || typeof value !== "object") {
         throw new SpikeError("assignments_shape_invalid", stage);
       }
       const assignment = value as Record<string, unknown>;
-      endpoint(assignment.endpoint);
+      const id = endpoint(assignment.endpoint);
+      if (seen.has(id)) throw new SpikeError("assignments_duplicate_endpoint", stage);
+      seen.add(id);
       return assignment as Assignment;
     });
   }

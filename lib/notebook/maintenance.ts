@@ -3,6 +3,7 @@ import type { SpikeEnv } from "../platform/config.ts";
 import { boundedStep } from "../platform/deadline.ts";
 import { safeError, SpikeError } from "../platform/security.ts";
 import { ArtifactStore } from "./artifact-store.ts";
+import { deleteArtifactObject } from "./artifact-object.ts";
 import { effectiveIdlePolicy, idleDue, idleSince } from "./policy.ts";
 import type { NotebookRuntime } from "./runtime.ts";
 import type { MaintenanceScan, NotebookStore } from "./store.ts";
@@ -22,6 +23,7 @@ export interface MaintenanceHost {
   advanceSetup(notebook: NotebookRow, allowDispatch?: boolean): Promise<void>;
   pollInput(notebook: NotebookRow): Promise<void>;
   poll(notebook: NotebookRow, archiveAllowed?: boolean): Promise<RunResult | null>;
+  reconcileNotebook(notebook: NotebookRow): Promise<void>;
 }
 
 async function retention(host: MaintenanceHost, observedAt: number, summary: Record<string, unknown>): Promise<void> {
@@ -36,7 +38,7 @@ async function retention(host: MaintenanceHost, observedAt: number, summary: Rec
     for (const row of retiring) {
       try {
         if (!host.env.BUCKET) throw new SpikeError("artifact_bucket_missing", "maintenance");
-        await step("maintenanceArtifactDelete", async () => { await host.env.BUCKET!.delete(row.object_key); });
+        await step("maintenanceArtifactDelete", () => deleteArtifactObject(host.env.BUCKET!, row));
         await step("maintenanceArtifactExpired", () => artifacts.expired(row.id));
         summary.retired = Number(summary.retired) + 1;
       } catch (error) { record(error); }
@@ -72,6 +74,17 @@ export async function runMaintenance(host: MaintenanceHost): Promise<Record<stri
       if (host.remaining() < 5000 || cleanupStarted) break;
       const item: Record<string, unknown> = { notebookId: initial.id };
       try {
+        try { await host.reconcileNotebook(initial); }
+        catch (error) { item.reconciliationWarning = safeError(error); }
+        const reconciled = await host.step("maintenancePresenceReadback", () => host.store.notebook(initial.id));
+        if (reconciled.state === "closed") {
+          item.reason = "provider_runtime_missing"; item.released = true;
+          summary.released = Number(summary.released) + 1;
+          (summary.notebooks as Record<string, unknown>[]).push(item);
+          afterId = initial.id; summary.scanned = Number(summary.scanned) + 1;
+          summary.scanRemaining = Math.max(0, Number(summary.scanRemaining) - 1);
+          continue;
+        }
         if (initial.active_setup_id) await host.advanceSetup(initial);
         if (initial.active_input_id) await host.pollInput(initial);
         if (initial.active_run_id) {

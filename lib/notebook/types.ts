@@ -40,6 +40,9 @@ export interface ArtifactRow {
   size: number; sha256: string; object_key: string; media_type: string;
   state: "pending" | "ready" | "deleting" | "expired";
   permanent: number; created_at: number; saved_at: number | null; expires_at: number | null;
+  upload_id: string | null; uploaded_parts_json: string;
+  upload_lease_token: string | null; upload_lease_expires_at: number;
+  storage_version: string | null;
 }
 export interface NotebookRow {
   id: string; owner_id: string; title: string; version: number; structure_version: number; state: NotebookState;
@@ -62,6 +65,8 @@ export interface RuntimeRow {
   accelerator: string;
   requested_compute: string; selected_accelerator: string | null;
   machine_kind: "CPU" | "GPU"; compute_verified: number;
+  assignment_checked_at?: number | null;
+  assignment_missing_since?: number | null;
 }
 export interface RunRow {
   id: string; notebook_id: string; runtime_id: string; cell_id: string; cell_version: number;

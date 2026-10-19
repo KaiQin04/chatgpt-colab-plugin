@@ -3,7 +3,8 @@ import type { SpikeEnv } from "../platform/config.ts";
 import { SpikeError } from "../platform/security.ts";
 import { requireActive } from "../platform/deadline.ts";
 import { MAX_CELLS, MAX_NOTEBOOK_SOURCE, MAX_RESULT_BYTES } from "./types.ts";
-import type { CellRow, NotebookRow, RunResult, RunRow, RunState, RuntimeRow } from "./types.ts";
+import { SMALL_ARTIFACT_BYTES } from "./policy.ts";
+import type { ArtifactRow, CellRow, NotebookRow, RunResult, RunRow, RunState, RuntimeRow } from "./types.ts";
 import type { ComputeChoice, ObservedCompute } from "./compute.ts";
 import { inputName } from "./inputs.ts";
 import type { InputFile, InputResult, InputRow } from "./inputs.ts";
@@ -42,6 +43,32 @@ export class NotebookStore {
       WHERE n.owner_id=? AND n.state<>'closed' AND n.id>? ORDER BY n.id LIMIT 31`)
       .bind(this.ownerId, afterId).all<ComputeNotebookRow>()).results;
   }
+  async presenceRuntimes(afterId = ""): Promise<RuntimeRow[]> {
+    return (await this.db.prepare(`SELECT r.* FROM notebook_runtimes r JOIN notebooks n ON n.runtime_id=r.id
+      AND n.owner_id=r.owner_id WHERE r.owner_id=? AND r.released=0 AND n.id>? ORDER BY n.id LIMIT 30`)
+      .bind(this.ownerId, afterId).all<RuntimeRow>()).results;
+  }
+  async presenceCounts(endpoints: string[], observedAt: number): Promise<{ retained: number; confirmed: number }> {
+    return (await this.db.prepare(`SELECT COUNT(*) AS retained,COALESCE(SUM(CASE WHEN r.state<>'opening'
+      AND r.created_at<=? AND r.endpoint IN (SELECT value FROM json_each(?)) THEN 1 ELSE 0 END),0) AS confirmed
+      FROM notebook_runtimes r JOIN notebooks n ON n.runtime_id=r.id AND n.owner_id=r.owner_id
+      WHERE r.owner_id=? AND r.released=0`).bind(observedAt, JSON.stringify(endpoints), this.ownerId)
+      .first<{ retained: number; confirmed: number }>())!;
+  }
+  async observeRuntime(runtime: RuntimeRow, present: boolean, observedAt: number, startedAt = observedAt): Promise<RuntimeRow> {
+    await this.db.prepare(`UPDATE notebook_runtimes SET assignment_missing_since=CASE WHEN ?=1 THEN NULL
+      ELSE COALESCE(assignment_missing_since,?) END,assignment_checked_at=?
+      WHERE id=? AND owner_id=? AND endpoint=? AND released=0 AND state<>'opening' AND updated_at<=?
+      AND COALESCE(assignment_checked_at,0)<=?
+      AND EXISTS(SELECT 1 FROM notebooks WHERE runtime_id=notebook_runtimes.id AND owner_id=?)`)
+      .bind(present ? 1 : 0, observedAt, observedAt,
+        runtime.id, this.ownerId, runtime.endpoint, startedAt, startedAt, this.ownerId).run();
+    return this.runtime(runtime.id);
+  }
+  async resetRuntimeAbsences(observedAt: number): Promise<void> {
+    await this.db.prepare(`UPDATE notebook_runtimes SET assignment_missing_since=NULL WHERE owner_id=? AND released=0
+      AND COALESCE(assignment_checked_at,0)<?`).bind(this.ownerId, observedAt).run();
+  }
   async beginScan(): Promise<MaintenanceScan | null> {
     const token = crypto.randomUUID(), now = Date.now();
     await this.db.batch([
@@ -58,9 +85,13 @@ export class NotebookStore {
     ).bind(id, this.ownerId, observedAt).run();
   }
   async discardArtifacts(runId: string, notebookId: string, error: Record<string, unknown>): Promise<void> {
-    await this.db.prepare(
+    await this.db.batch([this.db.prepare(
       "UPDATE notebook_runs SET artifacts_state='discarded',artifact_error_json=? WHERE id=? AND notebook_id=?",
-    ).bind(JSON.stringify(error), runId, notebookId).run();
+    ).bind(JSON.stringify(error), runId, notebookId),
+    // Multipart writers have leases; cleanup must wait for the last writer.
+    this.db.prepare(`UPDATE notebook_artifacts SET state='deleting'
+      WHERE run_id=? AND notebook_id=? AND owner_id=? AND state='pending' AND size>?`)
+      .bind(runId, notebookId, this.ownerId, SMALL_ARTIFACT_BYTES)]);
   }
   async finishScan(scan: MaintenanceScan | null, afterId: string, id: string,
     result: Record<string, unknown>, now: number): Promise<void> {
@@ -196,20 +227,28 @@ export class NotebookStore {
       ...bootstrap,
     ]);
   }
-  async finishRuntime(runtimeId: string, released: boolean, error: Record<string, unknown> | null): Promise<void> {
+  async finishRuntime(runtimeId: string, released: boolean, error: Record<string, unknown> | null,
+    absence?: { observedAt: number; startedAt: number; endpoint: string }): Promise<void> {
     const now = Date.now();
     await this.db.batch([
-      this.db.prepare("UPDATE notebook_runtimes SET state=?,released=?,error_json=?,updated_at=? WHERE id=? AND owner_id=? AND released=0")
+      this.db.prepare(`UPDATE notebook_runtimes SET state=?,released=?,error_json=?,updated_at=? WHERE id=? AND owner_id=? AND released=0
+        ${absence ? "AND endpoint=? AND state<>'opening' AND updated_at<=? AND assignment_checked_at=? AND assignment_missing_since<=?" : ""}`)
         .bind(released ? "closed" : "unknown", released ? 1 : 0,
-          error ? JSON.stringify(error) : null, now, runtimeId, this.ownerId),
+          error ? JSON.stringify(error) : null, now, runtimeId, this.ownerId,
+          ...(absence ? [absence.endpoint, absence.startedAt, absence.observedAt, absence.startedAt - 15_000] : [])),
       this.db.prepare(`UPDATE notebooks SET state=(SELECT CASE WHEN released=1 THEN 'closed' ELSE 'unknown' END
-        FROM notebook_runtimes WHERE id=?),updated_at=? WHERE runtime_id=? AND owner_id=?`)
+        FROM notebook_runtimes WHERE id=?),updated_at=? WHERE runtime_id=? AND owner_id=? AND state NOT IN ('closed','deleting')
+        ${absence ? "AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=notebooks.runtime_id AND released=1)" : ""}`)
         .bind(runtimeId, now, runtimeId, this.ownerId),
-      this.db.prepare(`UPDATE notebook_runs SET state='incomplete',error_json=?,updated_at=?
+      this.db.prepare(`UPDATE notebook_runs SET state='incomplete',error_json=?,updated_at=?,terminal_at=COALESCE(terminal_at,?)
         WHERE runtime_id=? AND state NOT IN ('ok','error','interrupted','incomplete')
         AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=? AND released=1 AND owner_id=?)`)
-        .bind(JSON.stringify({ code: "runtime_closed_without_terminal_result", stage: "close" }), now,
+        .bind(JSON.stringify({ code: "runtime_closed_without_terminal_result", stage: "close" }), now, now,
           runtimeId, runtimeId, this.ownerId),
+      this.db.prepare(`UPDATE notebook_runs SET artifacts_state='blocked',artifact_error_json=?
+        WHERE runtime_id=? AND artifacts_state IN ('pending','blocked')
+        AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=? AND released=1 AND owner_id=?)`)
+        .bind(JSON.stringify({ code: "runtime_released_before_artifacts_saved", stage: "artifacts" }), runtimeId, runtimeId, this.ownerId),
       this.db.prepare(`UPDATE notebooks SET active_run_id=NULL,control_token=NULL WHERE runtime_id=? AND owner_id=?
         AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=? AND released=1)`)
         .bind(runtimeId, this.ownerId, runtimeId),
@@ -266,18 +305,19 @@ export class NotebookStore {
   }
   async updateInput(id: string, state: string, result: InputResult | null, error: Record<string, unknown> | null = null): Promise<void> {
     const input = await this.input(id);
-    const terminal = result && result.status !== "running";
+    const finishedAt = result && result.status !== "running" ? result.finishedAt
+      : state === "error" && error?.dispatch === "not_sent" ? Date.now() : null;
     await this.db.batch([
       this.db.prepare(`UPDATE notebook_inputs SET state=CASE WHEN state='running' AND ? IN ('submitted','unknown') THEN state ELSE ? END,
         size=COALESCE(?,size),sha256=COALESCE(?,sha256),error_json=?,finished_at=COALESCE(?,finished_at)
         WHERE id=? AND state NOT IN ('ready','error','incomplete')`)
         .bind(state, state, result?.size ?? null, result?.sha256 ?? null,
           error ? JSON.stringify(error) : result?.error ? JSON.stringify({ ...result.error, stage: "inputs" }) : null,
-          terminal ? result.finishedAt : null, id),
+          finishedAt, id),
       this.db.prepare(`UPDATE notebooks SET state='open',active_input_id=NULL,last_activity_at=MAX(last_activity_at,?)
         WHERE id=? AND owner_id=? AND state='importing' AND runtime_id=? AND active_input_id=?
         AND EXISTS(SELECT 1 FROM notebook_inputs WHERE id=? AND state IN ('ready','error'))`)
-        .bind(terminal ? result.finishedAt : 0, input.notebook_id, this.ownerId, input.runtime_id, id, id),
+        .bind(finishedAt ?? 0, input.notebook_id, this.ownerId, input.runtime_id, id, id),
     ]);
   }
   async discardInput(id: string): Promise<void> {
@@ -449,6 +489,15 @@ export class NotebookStore {
     return (await this.db.prepare("SELECT object_key FROM notebook_artifacts WHERE notebook_id=? AND owner_id=?")
       .bind(id, this.ownerId).all<{ object_key: string }>()).results.map((row) => row.object_key);
   }
+  async multipartArtifacts(id: string): Promise<ArtifactRow[]> {
+    return (await this.db.prepare(`SELECT * FROM notebook_artifacts WHERE notebook_id=? AND owner_id=?
+      AND state<>'expired' AND (upload_id IS NOT NULL OR upload_lease_expires_at>0)`)
+      .bind(id, this.ownerId).all<ArtifactRow>()).results;
+  }
+  async multipartDeleted(id: string): Promise<void> {
+    await this.db.prepare(`UPDATE notebook_artifacts SET upload_id=NULL,upload_lease_token=NULL,upload_lease_expires_at=0
+      WHERE id=? AND owner_id=?`).bind(id, this.ownerId).run();
+  }
   /** Remove every row of a notebook already marked deleting, in one transaction. */
   async purgeNotebook(id: string): Promise<void> {
     const guard = "EXISTS(SELECT 1 FROM notebooks WHERE id=? AND owner_id=? AND state='deleting')";
@@ -522,7 +571,8 @@ export class NotebookStore {
     if (resultJson && new TextEncoder().encode(resultJson).byteLength > MAX_RESULT_BYTES) {
       throw new SpikeError("run_result_limit_exceeded", "notebook");
     }
-    const terminal = result && result.status !== "running" ? result.finishedAt : null;
+    const terminal = result && result.status !== "running" ? result.finishedAt
+      : state === "error" && error?.dispatch === "not_sent" ? now : null;
     if (result && result.status !== "running" && (terminal === null || terminal < row.created_at - 60_000 || terminal > now + 30_000)) {
       throw new SpikeError("run_terminal_clock_untrusted", "notebook");
     }
@@ -536,10 +586,12 @@ export class NotebookStore {
         .bind(state, resultJson, error ? JSON.stringify(error) : null, now,
           terminal === null ? null : Math.max(row.created_at, Math.min(now, terminal)), state, state,
           resultJson, id, state),
-      this.db.prepare(`UPDATE notebooks SET active_run_id=NULL,updated_at=? WHERE id=? AND owner_id=?
+      this.db.prepare(`UPDATE notebooks SET active_run_id=NULL,updated_at=?,
+        last_terminal_at=MAX(COALESCE(last_terminal_at,0),COALESCE((SELECT terminal_at FROM notebook_runs WHERE id=?),0))
+        WHERE id=? AND owner_id=?
         AND active_run_id=? AND EXISTS(SELECT 1 FROM notebook_runs WHERE id=? AND state IN ('ok','error','interrupted','incomplete')
           AND artifacts_state IN ('saved','legacy','discarded'))`)
-        .bind(now, row.notebook_id, this.ownerId, id, id),
+        .bind(now, id, row.notebook_id, this.ownerId, id, id),
       this.db.prepare(`UPDATE notebooks SET state='open' WHERE id=? AND owner_id=?
         AND state='interrupting' AND active_run_id IS NULL AND control_token IS NULL`)
         .bind(row.notebook_id, this.ownerId),

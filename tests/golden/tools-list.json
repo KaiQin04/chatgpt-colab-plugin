@@ -25,7 +25,7 @@
     },
     "_meta": {
       "ui": {
-        "resourceUri": "ui://colab-spike/panel-74ce944dd3e2da73.html"
+        "resourceUri": "ui://colab-spike/panel-d3ad36e82fd5a4db.html"
       },
       "openai/ui": {
         "entrypoints": [
@@ -155,7 +155,7 @@
   {
     "name": "get_compute_status",
     "title": "Read balance, available GPUs and open notebooks",
-    "description": "Read current Colab balance/rate, account-wide estimated hours at that rate, dynamic eligible GPUs and owner notebooks with observed machines and idle durations. Rate zero means unknown estimate. Negative balance warns but does not block allocation. Paginate open notebooks with nextAfterNotebookId; no server runtime cap or allocation queue. TPU is unsupported.",
+    "description": "Read current Colab balance/rate, account-wide estimated hours at that rate, dynamic eligible GPUs and owner notebooks with observed machines and idle durations. ownerRuntimeCount counts provider-confirmed owned runtimes, or null when unknown; unresolved local records are ownerRuntimeUnknownCount. Repeated complete provider absence reconciles external termination without unassigning. Rate zero means unknown estimate, not proof of release. Negative balance warns but does not block allocation. Paginate open notebooks with nextAfterNotebookId; no server runtime cap or allocation queue. TPU is unsupported.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -594,7 +594,7 @@
   {
     "name": "close_notebook",
     "title": "Save results and release notebook runtime",
-    "description": "Block new runs, save terminal output and artifact files, release only this notebook's runtime, and confirm it is absent from assignments. If results/artifacts cannot be saved, retain the runtime for rescue. Set discardOutputs=true only when explicitly accepting loss of unsaved results/artifacts. Unknown release retains this notebook's lock and can be retried.",
+    "description": "Block new runs, save terminal output and artifact files, release only this notebook's runtime, and confirm it is absent from assignments. If results/artifacts cannot be saved, retain the runtime for rescue. Repeated complete provider absence can confirm an already externally terminated runtime; unresolved work becomes incomplete and unsaved artifacts blocked, while saved data is retained. Set discardOutputs=true only when explicitly accepting loss of unsaved results/artifacts or unknown setup/import work. Unknown release retains this notebook's lock and can be retried.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -740,7 +740,7 @@
   {
     "name": "get_artifacts",
     "title": "Save and list notebook artifacts",
-    "description": "Checkpoint one pending output file then list owner artifacts. Only the terminal run manifest under /content/<notebookId>/outputs is eligible. Hard limits: 16 MiB/file, 128 MiB/run, 32 files; blocked files prevent automatic release. Optional path filters this manifest. artifactId returns one five-minute owner-auth download link and a bounded safe image preview.",
+    "description": "Checkpoint one pending output file or one 8 MiB multipart step, then list owner artifacts. Keep polling get_notebook/get_artifacts until every artifact is ready; pending progress reports uploadedBytes/totalBytes and uploading/verifying. Final full-file verification may take up to 200 seconds; allow 240 seconds per checkpoint call and recheck after an unknown timeout. Only the terminal run manifest under /content/<notebookId>/outputs is eligible. Hard limits: 10 GiB/file, 40 GiB/run, 32 files; blocked files prevent automatic release. Optional path filters this manifest. artifactId returns a five-minute owner-auth browser link, bounded safe image preview and machineDownload grant. For programmatic download, use machineDownload.url and headers with this Site's official OAI-Sites-Authorization service access; keep credentials in memory, reject redirects, send only to this exact Site origin, and verify size/SHA-256. Machine GET/HEAD/Range needs no browser cookie. Prefer create_artifact_download for an already saved artifact when available.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -776,6 +776,38 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": true
+    },
+    "_meta": {
+      "ui": {
+        "visibility": [
+          "model",
+          "app"
+        ]
+      }
+    }
+  },
+  {
+    "name": "create_artifact_download",
+    "title": "Authorize a machine download of one saved artifact",
+    "description": "Issue a fresh five-minute download grant for one ready owner artifact in R2. No Colab calls or allocation. Use returned URL and grant header with this Site's official OAI-Sites-Authorization service access; browser cookies are not required. Keep both credentials in memory, never print/save them or put them in URLs, reject redirects, and send only to the exact returned Site origin. GET/HEAD and single byte Range supported; verify complete size/SHA-256. Renew through this tool on expiry. Does not authorize listing, other files or browser downloads. Archive limit: 10 GiB/file. Only fully hash-verified artifacts are downloadable.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        }
+      },
+      "required": [
+        "artifactId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
     },
     "_meta": {
       "ui": {

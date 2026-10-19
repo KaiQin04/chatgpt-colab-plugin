@@ -4,7 +4,7 @@ import { dispatchIdentity, safeError, SpikeError } from "../platform/security.ts
 import { boundedStep } from "../platform/deadline.ts";
 import { Store } from "../platform/store.ts";
 import { ArtifactStore } from "./artifact-store.ts";
-import { hex } from "./artifacts.ts";
+import { matchesArtifact } from "./artifact-object.ts";
 
 export async function artifactDownload(request: Request, env: SpikeEnv, id: string): Promise<Response> {
   const headers = new Headers({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -17,7 +17,8 @@ export async function artifactDownload(request: Request, env: SpikeEnv, id: stri
       .authorizeDownload(id, new URL(request.url).searchParams.get("token") ?? "", Date.now()));
     await boundedStep("downloadActivity", 2000, request.signal, () => new ArtifactStore(env, identity.userId).notebooks.touch(row.notebook_id, Date.now()));
     const object = await boundedStep("downloadObject", 5000, request.signal, () => env.BUCKET!.get(row.object_key));
-    if (!object || object.size !== row.size || !object.checksums.sha256 || hex(object.checksums.sha256) !== row.sha256) {
+    if (!object || !matchesArtifact(object, row)) {
+      await object?.body.cancel();
       throw new SpikeError("artifact_storage_readback_mismatch", "download", 502);
     }
     headers.set("Content-Type", "application/octet-stream"); headers.set("Content-Length", String(row.size));

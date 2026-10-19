@@ -96,6 +96,27 @@ async function prepared(paths = ["result.txt"]) {
     confirmRelease: () => { releaseConfirmed = true; } };
 }
 
+test("external release retains saved artifact bytes and records unsaved artifacts as blocked", async () => {
+  const f = await prepared(["saved.txt", "unsaved.txt"]);
+  try {
+    await f.archive(); // The archive checkpoint saves exactly one file.
+    const saved = (await f.artifacts.list(notebookId, f.run.id)).find(row => row.state === "ready")!;
+    const before = new Uint8Array(f.bucket.files.get(saved.object_key)!.data);
+    f.remote.computeStatus = async () => ({ ...syntheticComputeStatus({ assignmentsCount: 0 }),
+      assignmentCount: 0, assignmentEndpoints: [] });
+    let observedAt = Date.now() + 60_000;
+    const status = () => notebookCall("get_compute_status", {}, f.env, OWNER, { ...f.options, now: () => observedAt });
+    await status(); observedAt += 16_000; await status();
+    assert.equal((await f.store.notebook(notebookId)).state, "closed");
+    assert.equal((await f.store.run(f.run.id)).state, "ok", "a known terminal result is retained");
+    assert.equal((await f.store.run(f.run.id)).artifacts_state, "blocked");
+    const retained = (await f.artifacts.list(notebookId, f.run.id)).find(row => row.id === saved.id)!;
+    assert.equal(retained.state, "ready");
+    assert.deepEqual(f.bucket.files.get(saved.object_key)!.data, before);
+    assert.equal(f.bucket.deletes, 0); assert.equal(f.info().releases, 0);
+  } finally { f.close(); }
+});
+
 async function addRuntime(store: NotebookStore, id: string, accelerator = "CPU") {
   const kind = accelerator === "CPU" ? "CPU" : "GPU";
   const { runtime } = await store.reserveOpen(id, "Synthetic extra notebook", `open-${id}`, accelerator);
@@ -326,9 +347,60 @@ test("pin/30-day expiry CAS, owner-only expiring download, and bounded expired-t
   } finally { f.close(); }
 });
 
+test("large verification survives the normal 30s service deadline but still honours caller cancellation", { timeout: 5000 }, async (t) => {
+  const f = await prepared([]), original = Object.getOwnPropertyDescriptor(crypto, "DigestStream");
+  const signal = new AbortController(); let started = false, cancelled = false, settled = false;
+  let verificationStarted!: () => void;
+  const startedPromise = new Promise<void>(resolve => { verificationStarted = resolve; });
+  Object.defineProperty(crypto, "DigestStream", { configurable: true, value: class extends WritableStream {
+    constructor() { super(); }
+    digest = new Promise<ArrayBuffer>(() => {});
+  } });
+  try {
+    const size = 2 * 1024 ** 3;
+    const manifest = { files: [{ path: "large.bin", size, sha256: "a".repeat(64) }], errors: [] };
+    f.sqlite.prepare("UPDATE notebook_runs SET result_json=? WHERE id=?")
+      .run(JSON.stringify({ ...f.result, artifacts: manifest }), f.run.id);
+    await f.artifacts.initialize(f.run.id, manifest, Date.now());
+    const parts = Array.from({ length: 256 }, (_, index) => ({ partNumber: index + 1, etag: `part-${index}` }));
+    f.sqlite.prepare("UPDATE notebook_artifacts SET upload_id='synthetic-upload',uploaded_parts_json=?")
+      .run(JSON.stringify(parts));
+    const object = { size, version: "synthetic-version", checksums: {} };
+    f.env.BUCKET = { head: async () => object, get: async () => {
+      started = true; verificationStarted();
+      return { ...object, body: new ReadableStream({ cancel() { cancelled = true; } }) };
+    } } as unknown as R2Bucket;
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const result = notebookCall("get_notebook", { notebookId }, f.env, OWNER, { ...f.options, signal: signal.signal })
+      .then((value) => { settled = true; return { value, error: null }; }, (error) => { settled = true; return { value: null, error }; });
+    await Promise.race([startedPromise, result.then(outcome => {
+      throw outcome.error ?? new Error("verification_finished_before_read");
+    })]);
+    assert.equal(started, true);
+    await setImmediate();
+    t.mock.timers.tick(31_000);
+    await setImmediate();
+    assert.equal(settled, false); assert.equal(cancelled, false);
+    signal.abort();
+    assert.match(String((await result).error), /deadline/);
+    await setImmediate(); assert.equal(cancelled, true);
+  } finally {
+    signal.abort(); t.mock.timers.reset();
+    if (original) Object.defineProperty(crypto, "DigestStream", original);
+    else Reflect.deleteProperty(crypto, "DigestStream");
+    f.close();
+  }
+});
+
 test("manifest bounds and path traversal/links never silently become saved", async () => {
+  const file = (path: string, size: number) => ({ path, size, sha256: "a".repeat(64) });
+  const limit = 10 * 1024 * 1024 * 1024;
+  assert.equal(artifactManifest({ files: [file("large", limit)], errors: [] }).files[0].size, limit);
+  const four = Array.from({ length: 4 }, (_, i) => file(`file-${i}`, limit));
+  assert.equal(artifactManifest({ files: four, errors: [] }).files.length, 4);
+  assert.throws(() => artifactManifest({ files: [...four, file("extra", 1)], errors: [] }), /run_too_large/);
   for (const path of ["../private", "/absolute", "a/../x", "a\\b", "a/%2e%2e/x", "a\u0000b"]) assert.throws(() => artifactPath(path), /path_invalid/);
-  assert.throws(() => artifactManifest({ files: [{ path: "too-big", size: 16 * 1024 * 1024 + 1, sha256: "a".repeat(64) }], errors: [] }), /manifest_invalid/);
+  assert.throws(() => artifactManifest({ files: [{ path: "too-big", size: 10 * 1024 * 1024 * 1024 + 1, sha256: "a".repeat(64) }], errors: [] }), /manifest_invalid/);
   const f = await prepared([]);
   try {
     f.sqlite.prepare("UPDATE notebook_runs SET result_json=? WHERE id=?").run(JSON.stringify({ ...f.result,

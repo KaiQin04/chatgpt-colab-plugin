@@ -5,11 +5,19 @@ export const CPU_IDLE_MS = 5 * 60 * 60 * 1000;
 export const GPU_IDLE_MS = 2 * 60 * 60 * 1000;
 export const ARTIFACT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const DOWNLOAD_TTL_MS = 5 * 60 * 1000;
-export const MAX_ARTIFACT_FILE_BYTES = 16 * 1024 * 1024;
-export const MAX_ARTIFACT_RUN_BYTES = 128 * 1024 * 1024;
+export const MAX_ARTIFACT_FILE_BYTES = 10 * 1024 * 1024 * 1024;
+export const MAX_ARTIFACT_RUN_BYTES = 40 * 1024 * 1024 * 1024;
+export const SMALL_ARTIFACT_BYTES = 16 * 1024 * 1024;
+export const ARTIFACT_PART_BYTES = 8 * 1024 * 1024;
+export const ARTIFACT_UPLOAD_LEASE_MS = 70_000;
 export const MAX_ARTIFACT_FILES = 32;
 export const MAX_PREVIEW_BYTES = 256 * 1024;
 export const MAX_ARCHIVE_FILES_PER_REQUEST = 1;
+
+/** Full streaming verification scales with bytes, capped at 200 seconds. */
+export function artifactVerificationMs(size: number): number {
+  return 20_000 * Math.max(1, Math.min(10, Math.ceil(size / (1024 * 1024 * 1024))));
+}
 
 export function idlePolicy(runtime: RuntimeRow): number {
   return runtime.machine_kind === "GPU" ? GPU_IDLE_MS : CPU_IDLE_MS;

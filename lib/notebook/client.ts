@@ -2,8 +2,8 @@
  * Notebook UI transport. The same UI runs in two hosts:
  *  - the private Site page, which POSTs to /api/notebooks (same origin);
  *  - the ChatGPT MCP Apps iframe, which calls tools through the host bridge.
- * Behaviour mirrors the legacy editor (lib/notebook/editor.ts): 55 s request
- * budget, fixed error codes, and only parent-window JSON-RPC messages.
+ * Behaviour mirrors the legacy editor: 55 s requests, up to 240 s for artifact
+ * checkpoints, fixed error codes, and only parent-window JSON-RPC messages.
  */
 import type { NotebookToolName, ToolArgs } from "./contract.ts";
 
@@ -18,6 +18,11 @@ export interface NotebookClient {
 }
 
 export const REQUEST_TIMEOUT_MS = 55_000;
+export const ARTIFACT_REQUEST_TIMEOUT_MS = 240_000;
+export function requestTimeoutMs(name: string): number {
+  return ["get_notebook", "get_artifacts", "close_notebook", "maintain_notebooks"].includes(name)
+    ? ARTIFACT_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+}
 export const MCP_APPS_PROTOCOL = "2026-01-26";
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -29,14 +34,13 @@ export function createFetchClient(options: {
 } = {}): NotebookClient {
   const endpoint = options.endpoint ?? "/api/notebooks";
   const send = options.fetch ?? fetch;
-  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const inflight = new Set<AbortController>();
   return {
     mode: "site",
     async call(name, args) {
       const controller = new AbortController();
       inflight.add(controller);
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? requestTimeoutMs(name));
       try {
         const response = await send(endpoint, {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -98,13 +102,13 @@ export async function createBridgeClient(options: {
   };
   host.addEventListener("message", onMessage);
 
-  const request = (method: string, params: Record<string, unknown>) =>
+  const request = (method: string, params: Record<string, unknown>, budget = timeoutMs) =>
     new Promise<Record<string, unknown>>((resolve, reject) => {
       const id = ++next;
       const timer = setTimeout(() => {
         pending.delete(id);
         reject(new Error("bridge_timeout_unknown"));
-      }, timeoutMs);
+      }, budget);
       pending.set(id, { resolve, reject, timer });
       host.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
     });
@@ -129,7 +133,8 @@ export async function createBridgeClient(options: {
   return {
     mode: "mcp",
     async call(name, args) {
-      const response = await request("tools/call", { name: name === "upsert_cell" || name === "run_cell" ? `ui_${name}` : name, arguments: args });
+      const response = await request("tools/call", { name: name === "upsert_cell" || name === "run_cell" ? `ui_${name}` : name, arguments: args },
+        options.timeoutMs ?? requestTimeoutMs(name));
       if (!isObject(response.structuredContent)) throw new Error("invalid_host_result");
       return response.structuredContent;
     },

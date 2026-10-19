@@ -51,10 +51,11 @@ test("runtime result parsing drops oversized PNGs while preserving text and vali
 });
 
 class Socket extends EventTarget {
-  closed = false; sent = "";
+  closed = false; sent = ""; sends = 0;
   constructor(readonly unknown = false) { super(); }
   accept(): void {}
   send(raw: string): void {
+    this.sends++;
     this.sent = raw;
     const request = JSON.parse(raw);
     queueMicrotask(() => {
@@ -115,6 +116,104 @@ test("disconnect before matched ACK is explicit unknown and the socket still clo
   const mock = remote({ unknown: true }), runtime = new NotebookRuntime(new ColabClient(ACCESS, mock.fetcher), mock.fetcher);
   await assert.rejects(runtime.submit(row, runId, "print(42)", new AbortController().signal), /dispatch_ack_unknown/);
   assert.equal(mock.socket.closed, true);
+  assert.equal(mock.info().assignments, 1, "never retry after send");
+});
+
+test("a transient handshake failure refreshes the proxy and sends the cell only once", async () => {
+  const mock = remote();
+  let handshakes = 0;
+  const fetcher: Fetcher = async (input, init) => {
+    if (new URL(String(input)).pathname.endsWith("/channels") && ++handshakes === 1) {
+      throw new TypeError("synthetic connection reset");
+    }
+    return mock.fetcher(input, init);
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  await runtime.submit(row, runId, "print(42)", new AbortController().signal);
+  assert.equal(handshakes, 2); assert.equal(mock.info().assignments, 2);
+  assert.equal(mock.socket.sends, 1); assert.equal(mock.socket.closed, true);
+});
+
+test("handshake timeout retries once and closes a late first socket without replay", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const mock = remote(), late = new Socket();
+  let complete!: (response: Response) => void;
+  let handshakes = 0;
+  const fetcher: Fetcher = async (input, init) => {
+    if (new URL(String(input)).pathname.endsWith("/channels") && ++handshakes === 1) {
+      return new Promise<Response>(resolve => { complete = resolve; });
+    }
+    return mock.fetcher(input, init);
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  const submission = runtime.submit(row, runId, "print(42)", new AbortController().signal);
+  while (!complete) await setImmediate();
+  t.mock.timers.tick(5000);
+  await submission;
+  complete({ status: 101, webSocket: late } as unknown as Response);
+  await setImmediate();
+  assert.equal(handshakes, 2); assert.equal(mock.info().assignments, 2);
+  assert.equal(mock.socket.sends, 1); assert.equal(late.sends, 0); assert.equal(late.closed, true);
+});
+
+test("a throwing send is ambiguous and is never retried", async () => {
+  const mock = remote();
+  mock.socket.send = () => { mock.socket.sends++; throw new Error("synthetic uncertain send"); };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, mock.fetcher), mock.fetcher);
+  await assert.rejects(runtime.submit(row, runId, "print(42)", new AbortController().signal), (error: Error) => {
+    assert.notEqual(error.name, "SubmissionNotSentError"); assert.match(error.message, /dispatch_ack_unknown/); return true;
+  });
+  assert.equal(mock.socket.sends, 1); assert.equal(mock.info().assignments, 1);
+  assert.equal(mock.socket.closed, true);
+});
+
+test("permanent upgrade rejection does not retry and cannot execute code", async () => {
+  const mock = remote();
+  let handshakes = 0;
+  const fetcher: Fetcher = async (input, init) => {
+    if (new URL(String(input)).pathname.endsWith("/channels")) { handshakes++; return new Response(null, { status: 404 }); }
+    return mock.fetcher(input, init);
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  await assert.rejects(runtime.submit(row, runId, "print(42)", new AbortController().signal), { name: "SubmissionNotSentError" });
+  assert.equal(handshakes, 1); assert.equal(mock.socket.sends, 0);
+});
+
+test("exhausted handshake attempts are proven not sent, not an unknown ACK", async () => {
+  const mock = remote();
+  let handshakes = 0;
+  const fetcher: Fetcher = async (input, init) => {
+    if (new URL(String(input)).pathname.endsWith("/channels")) {
+      handshakes++; throw new TypeError("synthetic connection reset");
+    }
+    return mock.fetcher(input, init);
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  await assert.rejects(runtime.submit(row, runId, "print(42)", new AbortController().signal), (error: Error) => {
+    assert.equal(error.name, "SubmissionNotSentError"); return true;
+  });
+  assert.equal(handshakes, 2); assert.equal(mock.socket.sent, "");
+});
+
+test("a late upgrade after cancellation is closed without sending or retrying", async () => {
+  const mock = remote();
+  let complete!: (response: Response) => void;
+  const fetcher: Fetcher = async (input, init) => {
+    if (new URL(String(input)).pathname.endsWith("/channels")) {
+      return new Promise<Response>(resolve => { complete = resolve; });
+    }
+    return mock.fetcher(input, init);
+  };
+  const controller = new AbortController();
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  const submission = runtime.submit(row, runId, "print(42)", controller.signal);
+  while (!complete) await setImmediate();
+  controller.abort();
+  await assert.rejects(submission, /deadline/);
+  complete({ status: 101, webSocket: mock.socket } as unknown as Response);
+  await setImmediate();
+  assert.equal(mock.socket.sent, ""); assert.equal(mock.socket.closed, true);
+  assert.equal(mock.info().assignments, 1);
 });
 
 test("attachment execution is silent with history disabled and no Google/proxy credentials in VM code", async () => {
@@ -201,6 +300,35 @@ test("raw artifact files bypass the JSON size cap but enforce exact byte size an
   assert.equal(rawReads, 1);
   await assert.rejects(runtime.readArtifact(row, "x", 16 * 1024 * 1024 + 1, new AbortController().signal), /too_large/);
   await assert.rejects(runtime.readArtifact(row, "../private", data.length, new AbortController().signal), /path_invalid/);
+});
+
+test("large artifact reads require exact 206 ranges and never buffer an ignored Range response", async () => {
+  const size = 1024 * 1024 * 1024, start = 32 * 1024 * 1024, length = 8 * 1024 * 1024;
+  for (const mode of ["valid", "ignored", "wrong-range", "short", "overflow", "wrong-length"]) {
+    let cancelled = false;
+    const fetcher: Fetcher = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("assignments")) return json({ assignments: [{ endpoint: row.endpoint,
+        runtimeProxyInfo: { url: "https://synthetic-proxy.example.test/base", token: PROXY } }] });
+      if (url.pathname.includes("/api/contents/")) return json({ type: "file", size });
+      assert.equal(new Headers(init?.headers).get("Range"), `bytes=${start}-${start + length - 1}`);
+      assert.equal(new Headers(init?.headers).get("Accept-Encoding"), "identity");
+      const headers: Record<string, string> = { "Content-Range": `bytes ${mode === "wrong-range" ? 0 : start}-${start + length - 1}/${size}` };
+      if (mode === "wrong-length") headers["Content-Length"] = String(size);
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+        if (["ignored", "wrong-range", "wrong-length"].includes(mode)) return;
+        controller.enqueue(new Uint8Array(length + (mode === "short" ? -1 : mode === "overflow" ? 1 : 0)));
+        controller.close();
+      }, cancel() { cancelled = true; } }), { status: mode === "ignored" ? 200 : 206, headers });
+    };
+    const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+    const read = runtime.readArtifactRange(row, "large.bin", size, start, length, new AbortController().signal);
+    if (mode === "valid") assert.equal((await read).byteLength, length);
+    else await assert.rejects(read, /range_unsupported|changed/);
+    if (["ignored", "wrong-range", "wrong-length"].includes(mode)) assert.equal(cancelled, true);
+    await assert.rejects(runtime.readArtifactRange(row, "x", size, -1, length, new AbortController().signal), /range_invalid/);
+    await assert.rejects(runtime.readArtifactRange(row, "x", size, 0, length + 1, new AbortController().signal), /range_invalid/);
+  }
 });
 
 test("largest cell (16,000 CJK characters) builds wrappers under a small stack and round-trips", async () => {

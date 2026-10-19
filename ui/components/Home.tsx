@@ -33,6 +33,8 @@ export function Home(props: {
           <div className="stat"><div className="label">{t("Current usage")}</div><div className="value">{formatNumber(props.compute?.consumptionRateHourly, 2, locale)} <span className="note">units/hr</span></div></div>
           <div className="stat"><div className="label">{t("Open runtimes")}</div><div className="value">{props.compute?.ownerRuntimeCount ?? t("Unknown")}</div></div>
         </div>
+        {!!props.compute?.ownerRuntimeUnknownCount && <p className="note">{t("{count} runtimes awaiting confirmation. Refresh to retry.", { count: props.compute.ownerRuntimeUnknownCount })}</p>}
+        {props.compute?.runtimePresence === "unknown" && <p className="note">{t("Runtime status could not be confirmed. Refresh to retry.")}</p>}
         {gpus.length > 0 && <p className="note" style={{ marginTop: 12 }}>{t("Eligible GPUs: {gpus}", { gpus: gpus.join(", ") })}</p>}
       </section>
 

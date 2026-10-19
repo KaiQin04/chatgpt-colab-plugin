@@ -57,7 +57,7 @@ test("panel supports direct sidebar and thread entrypoints without allocating co
     "colab_spike_panel", "get_runtime_settings", "set_runtime_settings", "prepare_runtime",
     "get_compute_status", "open_notebook", "import_file", "upsert_cell", "move_cell", "delete_cell", "run_cell",
     "get_notebook", "interrupt_cell", "close_notebook", "export_ipynb", "rename_notebook", "delete_notebook",
-    "get_artifacts", "pin_artifact", "maintain_notebooks", "ui_upsert_cell", "ui_run_cell",
+    "get_artifacts", "create_artifact_download", "pin_artifact", "maintain_notebooks", "ui_upsert_cell", "ui_run_cell",
   ]);
   for (const name of ["delete_cell", "delete_notebook"]) {
     assert.equal(TOOLS.find((tool) => tool.name === name)!.annotations.destructiveHint, true, name);
@@ -75,7 +75,7 @@ test("static discovery works without visitor identity but tool execution fails c
   const f = fixture();
   try {
     const listing = await (await mcpPost(rpc("tools/list", {}, null), f.env, noNetwork)).json() as RpcResponse;
-    assert.equal(listing.result.tools.length, 22);
+    assert.equal(listing.result.tools.length, 23);
     assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS count FROM site_owner").get()!.count, 0);
     const denied = await (await mcpPost(rpc("tools/call", { name: "colab_spike_panel" }, null), f.env, noNetwork)).json() as RpcResponse;
     assert.equal(denied.result.isError, true);

@@ -119,15 +119,17 @@ export class SetupStore {
       .bind(id, this.ownerId).run()).meta.changes);
   }
   async update(id: string, state: string, result: SetupResult | null, error: Record<string, unknown> | null = null): Promise<void> {
-    const job = await this.task(id), terminal = result && result.status !== "running";
+    const job = await this.task(id);
+    const finishedAt = result && result.status !== "running" ? result.finishedAt
+      : state === "error" && error?.dispatch === "not_sent" ? Date.now() : null;
     await this.db.batch([
       this.db.prepare(`UPDATE runtime_tasks SET state=CASE WHEN state='running' AND ? IN ('submitted','unknown') THEN state ELSE ? END,
         result_json=COALESCE(?,result_json),error_json=?,finished_at=COALESCE(?,finished_at) WHERE id=? AND state NOT IN ('ready','error','incomplete')`)
         .bind(state, state, result ? JSON.stringify(result) : null, error ? JSON.stringify(error) : result?.error ? JSON.stringify({ ...result.error, stage: "setup" }) : null,
-          terminal ? result.finishedAt : null, id),
+          finishedAt, id),
       this.db.prepare(`UPDATE notebooks SET state='open',active_setup_id=NULL,last_activity_at=MAX(last_activity_at,?) WHERE id=? AND owner_id=?
         AND state='preparing' AND runtime_id=? AND active_setup_id=? AND EXISTS(SELECT 1 FROM runtime_tasks WHERE id=? AND state IN ('ready','error'))`)
-        .bind(terminal ? result.finishedAt : 0, job.notebook_id, this.ownerId, job.runtime_id, id, id),
+        .bind(finishedAt ?? 0, job.notebook_id, this.ownerId, job.runtime_id, id, id),
     ]);
   }
   async discard(notebookId: string, pendingOnly = false): Promise<void> {

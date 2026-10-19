@@ -9,7 +9,8 @@ import { parseComputeInfo } from "../lib/colab/client.ts";
 
 export function syntheticComputeStatus(overrides: Record<string, unknown> = {}) {
   return { ...parseComputeInfo({ currentBalance: 100, consumptionRateHourly: 0.08,
-    assignmentsCount: 1, eligibleGpus: ["G4", "A100", "L4", "T4"], ...overrides }), assignmentCount: 1 };
+    assignmentsCount: 1, eligibleGpus: ["G4", "A100", "L4", "T4"], ...overrides }), assignmentCount: 1,
+    assignmentEndpoints: ["synthetic-owned-endpoint"] };
 }
 
 export const OWNER = { userId: "synthetic-owner", email: "owner@example.test" };

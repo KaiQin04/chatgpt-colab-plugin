@@ -10,7 +10,7 @@ import type { ToastState } from "../components/Chrome.tsx";
 import { Drawer } from "../components/Drawer.tsx";
 import { Home } from "../components/Home.tsx";
 import { Icon } from "../components/icons.tsx";
-import { ApiError, describe } from "./api.ts";
+import { ApiError, closeNeedsDiscard, describe } from "./api.ts";
 import type { ComputeStatus, DeletePreview, NotebookApi, NotebookSummary } from "./api.ts";
 import { formatBytes } from "./text.ts";
 import { isTransientPollError, startPolling } from "./polling.ts";
@@ -411,7 +411,7 @@ export function App(props: {
       await refresh();
       setCompute(await api.compute().catch(() => null));
     } catch (error) {
-      if (error instanceof ApiError && error.result?.outputsPersisted === false) setDialog({ kind: "discard", notebookId: notebook.id });
+      if (closeNeedsDiscard(error)) setDialog({ kind: "discard", notebookId: notebook.id });
       else fail(error);
     }
   }, [api, refresh, notify, fail, t]);
@@ -589,6 +589,9 @@ export function App(props: {
 
       <div className={`body${drawerOpen ? "" : " no-drawer"}`}>
         <main className="cells" ref={cellsRef} tabIndex={-1} aria-label="notebook cells">
+          {doc.state === "closed" && doc.runtime?.error?.code === "runtime_missing_on_provider" && <div className="banner">
+            <span>{t("Colab no longer has this runtime. Unsaved outputs are unavailable; saved results and artifacts are retained.")}</span>
+          </div>}
           {doc.state === "closed" && <div className="banner">
             <span className="grow">{t("Runtime is closed. You can keep editing; start it to run code.")}</span>
             <select className="select" value={openCompute} onChange={(event) => setOpenCompute(event.target.value)} aria-label={t("Startup machine")}>

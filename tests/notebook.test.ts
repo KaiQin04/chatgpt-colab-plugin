@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setImmediate } from "node:timers/promises";
-import { notebookCall } from "../lib/notebook/service.ts";
+import { maintenanceCall, notebookCall } from "../lib/notebook/service.ts";
 import { NotebookStore } from "../lib/notebook/store.ts";
-import { parseRunResult } from "../lib/notebook/runtime.ts";
+import { parseRunResult, SubmissionNotSentError } from "../lib/notebook/runtime.ts";
+import { GPU_IDLE_MS, idleDue } from "../lib/notebook/policy.ts";
 import type { RunResult, RuntimeRow } from "../lib/notebook/types.ts";
 import { MAX_RESULT_BYTES, MAX_RETURN_OUTPUT_BYTES, MAX_EXPORT_OUTPUT_BYTES } from "../lib/notebook/types.ts";
 import { syntheticPng } from "./png-fixture.ts";
@@ -37,16 +38,28 @@ class FakeRuntime {
   value: RunResult | null = null;
   runId = "";
   failAllocate = false; failKernel = false; failObserved = false; unknownAck = false; failRelease = false;
+  failBeforeSend = false;
   onSubmit?: () => Promise<void>;
   onInterrupt?: () => Promise<void>;
   beforeRelease?: () => void;
-  async computeStatus() { return syntheticComputeStatus(); }
+  assignmentEndpoints = ["synthetic-owned-endpoint"];
+  computeFailure = false;
+  async computeStatus() {
+    if (this.computeFailure) throw new SpikeError("upstream_http_error", "notebookComputeAssignments", 403);
+    return { ...syntheticComputeStatus({ assignmentsCount: this.assignmentEndpoints.length }),
+      assignmentCount: this.assignmentEndpoints.length, assignmentEndpoints: this.assignmentEndpoints };
+  }
   async submitInput(_runtime: RuntimeRow, id: string, _file: InputFile): Promise<void> {
     this.inputSubmissions++; this.inputId = id;
+    if (this.failBeforeSend) throw new SubmissionNotSentError(new SpikeError("step_timeout", "notebookWsHandshake"));
     if (this.unknownAck) throw new SpikeError("dispatch_ack_unknown", "submit");
   }
   async pollInput(): Promise<InputResult | null> { return this.inputResult; }
-  async submitSetup(): Promise<void> { this.setupSubmissions++; }
+  async submitSetup(): Promise<void> {
+    this.setupSubmissions++;
+    if (this.failBeforeSend) throw new SubmissionNotSentError(new SpikeError("step_timeout", "notebookWsHandshake"));
+    if (this.unknownAck) throw new SpikeError("dispatch_ack_unknown", "submit");
+  }
   async pollSetup(_runtime: RuntimeRow, job: SetupRow): Promise<SetupResult | null> {
     if (this.setupPending) return null;
     return { protocol: 1, jobId: job.id, status: "ready", phase: "ready",
@@ -68,6 +81,7 @@ class FakeRuntime {
   }
   async submit(_runtime: RuntimeRow, id: string): Promise<void> {
     this.submissions++; this.runId = id;
+    if (this.failBeforeSend) throw new SubmissionNotSentError(new SpikeError("step_timeout", "notebookWsHandshake"));
     if (this.onSubmit) await this.onSubmit();
     if (this.unknownAck) throw new SpikeError("dispatch_ack_unknown", "submit");
   }
@@ -88,10 +102,11 @@ async function setup() {
     masked_email: "g…@e…st", encrypted_refresh_token: await encryptToken(REFRESH,
       f.env.TOKEN_ENCRYPTION_KEY!, OWNER.userId, "synthetic-google-subject") });
   const remote = new FakeRuntime();
+  const clock = { value: Date.now() };
   const store = new NotebookStore(f.env, OWNER.userId);
   const invoke = (name: string, args: Record<string, unknown>) => notebookCall(name,
     validateNotebookArguments(name, args), f.env, OWNER, {
-      fetcher: async () => Response.json(tokenPayload(f.env)), runtimeFactory: () => remote,
+      fetcher: async () => Response.json(tokenPayload(f.env)), runtimeFactory: () => remote, now: () => Math.max(Date.now(), clock.value),
     });
   const call = async (name: string, args: Record<string, unknown>) => {
     let response = await invoke(name, args);
@@ -105,8 +120,345 @@ async function setup() {
   assert.equal((opened.notebook as any).state, "open");
   await call("upsert_cell", { notebookId, cellId, kind: "code", source: "x = 42\nprint(x)",
     expectedVersion: 0, notebookVersion: 1 });
-  return { ...f, call, invoke, remote, store };
+  return { ...f, call, invoke, remote, store, clock };
 }
+
+test("handshake failure after successful cells is terminal, idempotent, and permits preserve-close", async () => {
+  const f = await setup();
+  try {
+    await f.call("run_cell", runArgs);
+    f.remote.value = result(f.remote.runId);
+    await f.call("get_notebook", { notebookId });
+    const saved = await f.store.run(f.remote.runId);
+    f.remote.failBeforeSend = true; f.remote.value = null;
+    const args = { ...runArgs, idempotencyKey: "failed-handshake-after-success" };
+    const response = await f.call("run_cell", args);
+    const run = await f.store.run(f.remote.runId);
+    assert.equal(run.state, "error"); assert.equal(run.artifacts_state, "saved");
+    assert.equal(run.result_json, null, "no fabricated terminal output");
+    assert.ok(run.terminal_at); assert.equal((response.error as any).dispatch, "not_sent");
+    assert.equal((await f.store.notebook(notebookId)).active_run_id, null);
+    assert.equal((await f.call("run_cell", args)).cached, true);
+    assert.equal(f.remote.submissions, 2, "same key never dispatches again");
+    assert.equal((await f.store.run(saved.id)).result_json, saved.result_json);
+    const status = await f.call("get_compute_status", {});
+    assert.equal(typeof (status.notebooks as any[])[0].idleForMs, "number");
+    const closed = await f.call("close_notebook", { notebookId });
+    assert.equal(closed.released, true); assert.equal(closed.outputsPersisted, true);
+    assert.equal(f.remote.interrupts, 0); assert.equal(f.remote.releases, 1);
+  } finally { f.close(); }
+});
+
+test("pre-send bootstrap and import failures release their locks without discard or redispatch", async () => {
+  const f = await setup();
+  try {
+    f.remote.failBeforeSend = true; f.remote.setupPending = true;
+    await f.invoke("open_notebook", { ...openArgs, notebookId: otherId, idempotencyKey: "bootstrap-handshake-failure" });
+    const before = f.remote.setupSubmissions;
+    const first = await f.invoke("get_notebook", { notebookId: otherId });
+    const job = (first.notebook as any).setupTasks[0];
+    assert.equal(job.state, "error"); assert.equal(job.error.dispatch, "not_sent"); assert.ok(job.finishedAt);
+    assert.equal((first.notebook as any).activeSetupId, null);
+    await f.invoke("get_notebook", { notebookId: otherId });
+    assert.equal(f.remote.setupSubmissions, before + 1);
+    assert.equal((await f.call("close_notebook", { notebookId: otherId })).released, true);
+    const args = { notebookId, idempotencyKey: "input-handshake-failure",
+      file: { download_url: "https://files.example.com/synthetic", file_id: "synthetic-input" } };
+    const imported = await f.call("import_file", args);
+    assert.equal((imported.input as any).state, "error"); assert.ok((imported.input as any).finishedAt);
+    assert.equal((imported.error as any).dispatch, "not_sent");
+    assert.equal((await f.call("import_file", args)).cached, true);
+    assert.equal(f.remote.inputSubmissions, 1);
+    assert.equal((await f.call("close_notebook", { notebookId })).released, true);
+    assert.equal(f.remote.interrupts, 0);
+  } finally { f.close(); }
+});
+
+test("two-hour GPU idle resumes after a proven unsent dispatch but never discards an unknown run", async () => {
+  for (const unsent of [true, false]) {
+    const f = await setup();
+    try {
+      f.sqlite.exec("UPDATE notebook_runtimes SET machine_kind='GPU',accelerator='L4'");
+      f.remote.failBeforeSend = unsent; f.remote.unknownAck = !unsent;
+      await f.call("run_cell", runArgs);
+      const notebook = await f.store.notebook(notebookId);
+      const runtime = await f.store.runtime(notebook.runtime_id!);
+      const since = Math.max(notebook.last_activity_at, notebook.last_terminal_at ?? 0);
+      assert.equal(idleDue(notebook, runtime, since + GPU_IDLE_MS - 1), false);
+      assert.equal(idleDue(notebook, runtime, since + GPU_IDLE_MS), unsent);
+      if (!unsent) {
+        f.clock.value = since + GPU_IDLE_MS + 1;
+        const status = await f.call("get_compute_status", {});
+        assert.equal((status.notebooks as any[])[0].idleForMs, null);
+        const closed = await f.call("close_notebook", { notebookId });
+        assert.equal(closed.released, false); assert.equal(f.remote.releases, 0);
+        assert.equal((closed.outputError as any).code, "terminal_output_not_available");
+      }
+    } finally { f.close(); }
+  }
+});
+
+test("external termination reconciles unknown runs without deleting saved history or releasing another runtime", async () => {
+  const f = await setup();
+  try {
+    await f.call("run_cell", runArgs);
+    const savedId = f.remote.runId;
+    f.remote.value = result(savedId);
+    await f.call("get_notebook", { notebookId });
+    const saved = await f.store.run(savedId);
+    f.remote.unknownAck = true; f.remote.value = null;
+    await f.call("run_cell", { ...runArgs, idempotencyKey: "unknown-before-external-stop" });
+    const unknownId = f.remote.runId;
+    await new NotebookStore(f.env, OTHER.userId).reserveOpen(otherId, "Other owner", "other-runtime");
+    f.remote.assignmentEndpoints = [];
+    f.clock.value = Date.now() + 60_000;
+    const first = await f.call("get_compute_status", {});
+    assert.equal(first.ownerRuntimeCount, 0);
+    assert.equal(first.ownerRuntimeUnknownCount, 1);
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    f.clock.value += 16_000;
+    const second = await f.call("get_compute_status", {});
+    assert.equal(second.ownerRuntimeCount, 0); assert.equal(second.ownerRuntimeUnknownCount, 0);
+    const notebook = await f.store.notebook(notebookId);
+    assert.equal(notebook.state, "closed"); assert.equal(notebook.active_run_id, null);
+    assert.equal((await f.store.runtime(notebook.runtime_id!)).released, 1);
+    const unknown = await f.store.run(unknownId);
+    assert.equal(unknown.state, "incomplete"); assert.equal(unknown.artifacts_state, "blocked");
+    assert.equal(JSON.parse(unknown.artifact_error_json!).code, "runtime_released_before_artifacts_saved");
+    assert.equal((await f.store.run(savedId)).result_json, saved.result_json);
+    assert.equal((await f.store.run(savedId)).artifacts_state, "saved");
+    assert.equal((await new NotebookStore(f.env, OTHER.userId).notebook(otherId)).state, "opening");
+    assert.equal((await f.call("close_notebook", { notebookId })).released, true);
+    assert.equal(f.remote.allocations, 1); assert.equal(f.remote.releases, 0);
+    assert.ok(!JSON.stringify(second).includes("synthetic-owned-endpoint"));
+  } finally { f.close(); }
+});
+
+test("unknown bootstrap converges on close after repeated provider absence", async () => {
+  const f = await setup();
+  try {
+    f.remote.unknownAck = true; f.remote.setupPending = true;
+    await f.invoke("open_notebook", { ...openArgs, notebookId: otherId, idempotencyKey: "unknown-bootstrap" });
+    await f.call("get_notebook", { notebookId: otherId });
+    const before = await f.store.notebook(otherId);
+    assert.ok(before.active_setup_id);
+    f.remote.assignmentEndpoints = ["synthetic-owned-endpoint"];
+    f.clock.value = Date.now() + 60_000;
+    await f.call("get_compute_status", {});
+    f.clock.value += 16_000;
+    const closed = await f.call("close_notebook", { notebookId: otherId });
+    assert.equal(closed.released, true);
+    const after = await f.store.notebook(otherId);
+    assert.equal(after.state, "closed"); assert.equal(after.active_setup_id, null);
+    assert.equal(f.sqlite.prepare("SELECT state FROM runtime_tasks WHERE id=?").get(before.active_setup_id!)!.state, "incomplete");
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    assert.equal(f.remote.releases, 0);
+  } finally { f.close(); }
+});
+
+for (const failure of ["cancellation", "request deadline"] as const) {
+  test(`provider ${failure} invalidates old absence before the next observation`, async (t) => {
+    const f = await setup();
+    try {
+      f.remote.unknownAck = true;
+      await f.call("run_cell", runArgs);
+      const runId = f.remote.runId;
+      const runtimeId = (await f.store.notebook(notebookId)).runtime_id!;
+      f.clock.value = Date.now() + 60_000;
+      f.remote.assignmentEndpoints = [];
+      await f.call("get_compute_status", {});
+      assert.ok((await f.store.runtime(runtimeId)).assignment_missing_since);
+
+      const compute = f.remote.computeStatus.bind(f.remote);
+      let querying = false;
+      f.remote.computeStatus = (signal?: AbortSignal) => {
+        querying = true;
+        return new Promise<Awaited<ReturnType<typeof compute>>>((_resolve, reject) => {
+          signal!.addEventListener("abort", () => reject(new SpikeError(
+            "operation_deadline_exceeded", "notebookComputeAssignments",
+          )), { once: true });
+        });
+      };
+      const controller = new AbortController();
+      if (failure === "request deadline") t.mock.timers.enable({ apis: ["setTimeout"] });
+      f.clock.value += 16_000;
+      const rejected = assert.rejects(notebookCall("get_compute_status", {}, f.env, OWNER, {
+        signal: controller.signal, fetcher: async () => Response.json(tokenPayload(f.env)),
+        runtimeFactory: () => f.remote, now: () => f.clock.value,
+      }), /operation_deadline_exceeded/);
+      while (!querying) await setImmediate();
+      if (failure === "request deadline") t.mock.timers.tick(30_000);
+      else controller.abort();
+      await rejected;
+      const cleared = (await f.store.runtime(runtimeId)).assignment_missing_since;
+
+      f.remote.computeStatus = compute;
+      f.clock.value += 16_000;
+      await f.call("get_compute_status", {});
+      const notebook = await f.store.notebook(notebookId);
+      assert.equal(notebook.state, "open", "a failed query breaks consecutive absence evidence");
+      assert.equal(notebook.active_run_id, runId);
+      assert.equal((await f.store.run(runId)).state, "unknown");
+      assert.equal((await f.store.run(runId)).artifacts_state, "pending");
+      assert.equal((await f.store.runtime(runtimeId)).released, 0);
+      assert.equal(f.remote.releases, 0);
+      assert.equal(cleared, null);
+      assert.equal((await f.store.runtime(runtimeId)).assignment_missing_since, f.clock.value);
+
+      // An uncertain execution remains eligible for output rescue; never replay it.
+      f.remote.assignmentEndpoints = ["synthetic-owned-endpoint"];
+      f.remote.value = result(runId);
+      f.clock.value += 16_000;
+      await f.call("get_notebook", { notebookId });
+      assert.equal((await f.store.run(runId)).state, "ok");
+      assert.equal((await f.store.run(runId)).artifacts_state, "saved");
+      assert.equal((await f.store.notebook(notebookId)).active_run_id, null);
+      assert.equal(f.remote.submissions, 1); assert.equal(f.remote.releases, 0);
+    } finally { f.close(); }
+  });
+}
+
+test("cancelled absence cleanup is bounded and a late reset preserves a newer observation", async (t) => {
+  const f = await setup();
+  let finishReset: (() => Promise<void>) | undefined;
+  try {
+    f.remote.unknownAck = true;
+    await f.call("run_cell", runArgs);
+    const runtime = await f.store.runtime((await f.store.notebook(notebookId)).runtime_id!);
+    f.clock.value = Date.now() + 60_000;
+    f.remote.assignmentEndpoints = [];
+    await f.call("get_compute_status", {});
+    const controller = new AbortController();
+    f.remote.computeStatus = async () => {
+      controller.abort(); throw new SpikeError("operation_deadline_exceeded", "notebookComputeAssignments");
+    };
+    const prepare = f.env.DB!.prepare.bind(f.env.DB!);
+    f.env.DB!.prepare = (sql: string) => {
+      const statement = prepare(sql);
+      if (!sql.startsWith("UPDATE notebook_runtimes SET assignment_missing_since=NULL")) return statement;
+      const bind = statement.bind.bind(statement);
+      statement.bind = (...values: unknown[]) => {
+        const bound = bind(...values);
+        const run = bound.run.bind(bound);
+        bound.run = () => new Promise(resolve => {
+          finishReset = async () => { resolve(await run()); };
+        });
+        return bound;
+      };
+      return statement;
+    };
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    f.clock.value += 16_000;
+    let finished = false;
+    const rejected = assert.rejects(notebookCall("get_compute_status", {}, f.env, OWNER, {
+      signal: controller.signal, fetcher: async () => Response.json(tokenPayload(f.env)),
+      runtimeFactory: () => f.remote, now: () => f.clock.value,
+    }), /operation_deadline_exceeded/).then(() => { finished = true; });
+    while (!finishReset) await setImmediate();
+    t.mock.timers.tick(1999); await setImmediate();
+    assert.equal(finished, false, "cleanup receives its own budget after cancellation");
+    const newer = f.clock.value + 1000;
+    await f.store.observeRuntime(runtime, true, newer);
+    await f.store.observeRuntime(runtime, false, newer + 1);
+    t.mock.timers.tick(1); await rejected;
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    assert.equal((await f.store.run(f.remote.runId)).state, "unknown");
+    assert.equal((await f.store.runtime(runtime.id)).released, 0);
+    assert.equal(f.remote.releases, 0);
+    await finishReset(); await setImmediate();
+    assert.equal((await f.store.runtime(runtime.id)).assignment_missing_since, newer + 1);
+  } finally { f.close(); }
+});
+
+test("provider failure and a temporary empty snapshot cannot release a live runtime", async () => {
+  const f = await setup();
+  try {
+    f.clock.value = Date.now() + 60_000;
+    f.remote.assignmentEndpoints = [];
+    await f.call("get_compute_status", {});
+    f.clock.value += 16_000; f.remote.computeFailure = true;
+    const failed = await f.call("get_compute_status", {});
+    assert.equal(failed.ownerRuntimeCount, null); assert.equal(failed.runtimePresence, "unknown");
+    assert.equal((await f.store.runtime((await f.store.notebook(notebookId)).runtime_id!)).assignment_missing_since, null);
+    f.remote.computeFailure = false;
+    f.remote.assignmentEndpoints = ["synthetic-owned-endpoint", "unrelated-provider-runtime"];
+    assert.equal((await f.call("get_compute_status", {})).ownerRuntimeCount, 1);
+    f.clock.value += 16_000; f.remote.assignmentEndpoints = [];
+    await f.call("get_compute_status", {});
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    assert.equal(f.remote.releases, 0);
+  } finally { f.close(); }
+});
+
+test("hourly maintenance converges an unknown run after two authoritative absences", async () => {
+  const f = await setup();
+  try {
+    f.remote.unknownAck = true;
+    await f.call("run_cell", runArgs);
+    f.remote.assignmentEndpoints = [];
+    const options = { fetcher: async () => Response.json(tokenPayload(f.env)), runtimeFactory: () => f.remote,
+      now: () => f.clock.value };
+    f.clock.value = Date.now() + 3_600_000;
+    await maintenanceCall(f.env, OWNER.userId, options);
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    f.clock.value += 3_600_000;
+    const maintained = await maintenanceCall(f.env, OWNER.userId, options);
+    assert.equal(maintained.released, 1);
+    assert.equal((await f.store.notebook(notebookId)).state, "closed");
+    assert.equal((await f.store.run(f.remote.runId)).state, "incomplete");
+    assert.equal(f.remote.releases, 0);
+  } finally { f.close(); }
+});
+
+test("maintenance still saves a terminal result when compute status is unavailable", async () => {
+  const f = await setup();
+  try {
+    await f.call("run_cell", runArgs); f.remote.value = result(f.remote.runId);
+    f.remote.computeFailure = true;
+    await maintenanceCall(f.env, OWNER.userId, { fetcher: async () => Response.json(tokenPayload(f.env)), runtimeFactory: () => f.remote });
+    assert.equal((await f.store.run(f.remote.runId)).state, "ok");
+    assert.equal((await f.store.run(f.remote.runId)).artifacts_state, "saved");
+    assert.equal((await f.store.notebook(notebookId)).active_run_id, null);
+    assert.equal(f.remote.releases, 0);
+  } finally { f.close(); }
+});
+
+test("slow provider reads cannot substitute for time between independent absence checks", async () => {
+  const f = await setup();
+  try {
+    f.remote.assignmentEndpoints = []; f.clock.value = Date.now() + 60_000;
+    const compute = f.remote.computeStatus.bind(f.remote);
+    f.remote.computeStatus = async () => {
+      const value = await compute(); f.clock.value += 20_000; return value;
+    };
+    await f.call("get_compute_status", {});
+    f.remote.computeStatus = compute;
+    await f.call("get_compute_status", {});
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    f.clock.value += 16_000;
+    await f.call("get_compute_status", {});
+    assert.equal((await f.store.notebook(notebookId)).state, "closed");
+  } finally { f.close(); }
+});
+
+test("stale absence cannot override a newer presence or resurrect a deleting notebook", async () => {
+  const f = await setup();
+  try {
+    const runtime = await f.store.runtime((await f.store.notebook(notebookId)).runtime_id!);
+    const first = Date.now() + 60_000, stale = first + 16_000;
+    await f.store.observeRuntime(runtime, false, first);
+    await f.store.observeRuntime(runtime, true, stale + 1);
+    await f.store.observeRuntime(runtime, false, stale);
+    await f.store.finishRuntime(runtime.id, true, null, { observedAt: stale, startedAt: stale, endpoint: runtime.endpoint! });
+    assert.equal((await f.store.runtime(runtime.id)).released, 0);
+    assert.equal((await f.store.runtime(runtime.id)).assignment_missing_since, null);
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+    await f.store.finishRuntime(runtime.id, true, null);
+    assert.equal(await f.store.beginDelete(notebookId), true);
+    await f.store.finishRuntime(runtime.id, true, null, { observedAt: stale, startedAt: stale, endpoint: runtime.endpoint! });
+    assert.equal((await f.store.notebook(notebookId)).state, "deleting");
+  } finally { f.close(); }
+});
 
 test("persistent owner documents, cell CAS, and multiple independently owned runtimes", async () => {
   const f = await setup();
@@ -434,7 +786,8 @@ test("compute status paginates every owned live notebook and cache failure prese
     for (let i = 0; i < 31; i++) await f.store.reserveOpen(crypto.randomUUID(), `Synthetic ${i}`, `synthetic-status-${i}`);
     await new NotebookStore(f.env, OTHER.userId).reserveOpen(crypto.randomUUID(), "Other owner secret title", "other-owner-status");
     const first = await f.call("get_compute_status", {});
-    assert.equal(first.ownerRuntimeCount, 32); assert.equal((first.notebooks as any[]).length, 30);
+    assert.equal(first.ownerRuntimeCount, 1); assert.equal(first.ownerRuntimeUnknownCount, 31);
+    assert.equal(first.retainedRuntimeCount, 32); assert.equal((first.notebooks as any[]).length, 30);
     assert.equal(first.hasMore, true); assert.equal(first.serverRuntimeCap, null); assert.equal(first.queueEnabled, false);
     const second = await f.call("get_compute_status", { afterNotebookId: first.nextAfterNotebookId });
     assert.equal((second.notebooks as any[]).length, 2); assert.equal(second.hasMore, false);
