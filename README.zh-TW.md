@@ -1,8 +1,10 @@
-# chatgpt-colab-plugin
+# ChatGPT Colab Plugin — 請 dot 調用你的 Google Colab
 
 **在 ChatGPT 執行 Colab Notebook，使用你自己的 Colab 運算額度。**
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
+
+**[專案網站](https://kaiqin04.github.io/chatgpt-colab-plugin/zh-TW/) · [dot 完整教學](https://kaiqin04.github.io/chatgpt-colab-plugin/zh-TW/guides/dot-colab/)**
 
 直接在 ChatGPT 對話中編寫、修改與執行 Python Notebook；程式在你自己的 Google Colab runtime 執行，使用自己帳號可用的運算資源與額度。你可以手動編輯並按 Shift＋Enter，也可以請 ChatGPT 操作 Notebook。每位使用者部署自己的私人後端、設定自己的 Google OAuth，不共用作者的 Site、憑證或額度。
 
@@ -39,7 +41,7 @@
 - 自有 Site、D1 資料庫、R2 成品儲存與私人 Plugin；repo 作者不代管你的帳號或後端。
 
 ```text
-Your ChatGPT / Codex
+Your dot / ChatGPT / Codex
         |
 Your private Site + MCP + D1 + R2
         |
@@ -72,6 +74,8 @@ Google 帳號授權與必要的設定仍需本人完成。這不是安裝後零�
 > 請使用我已連接的 Colab Plugin，建立新的 CPU Notebook。產生一小份合成資料，計算摘要統計並繪製直方圖。執行 cell、取得圖表與 Notebook，確認結果已保存後，釋放這次任務建立的 runtime。
 
 運算使用你自己的 Colab 帳號與額度，操作仍依 dot 的權限與核准設定執行。
+
+本整合透過 **Model Context Protocol（MCP）** 提供 Notebook 工具，讓 dot 把你的要求轉成可編輯的 Notebook、圖表與可下載資料。[跟著完整教學完成設定與第一份分析](https://kaiqin04.github.io/chatgpt-colab-plugin/zh-TW/guides/dot-colab/)。
 
 ## 本機開發與驗證
 

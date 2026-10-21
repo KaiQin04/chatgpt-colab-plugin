@@ -1,8 +1,10 @@
-# chatgpt-colab-plugin
+# ChatGPT Colab Plugin — Run Python notebooks with your dot
 
 **Run Colab notebooks in ChatGPT using your own Colab compute credits.**
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
+
+**[Website](https://kaiqin04.github.io/chatgpt-colab-plugin/) · [Complete dot tutorial](https://kaiqin04.github.io/chatgpt-colab-plugin/guides/dot-colab/)**
 
 Write, edit, and run Python notebooks from your ChatGPT conversation. Execution happens on **your Google Colab runtime**, using the resources and compute credits available to **your own Colab account**. Edit cells yourself, press **Shift + Enter**, or ask ChatGPT to work with the notebook.
 
@@ -44,7 +46,7 @@ Local demo with sample data and simulated compute values; no Google account or C
 **Bring your own Colab account and compute credits.** This project does not provide extra credits, guarantee GPU availability, or transfer your Colab subscription to OpenAI. Available hardware, usage limits, and charges remain subject to your Colab account and Google's policies.
 
 ```text
-Your ChatGPT / Codex
+Your dot / ChatGPT / Codex
         |
 Your private Site + MCP + D1 + R2
         |
@@ -75,6 +77,8 @@ For example:
 > Use my connected Colab plugin to create a new CPU notebook. Generate a small synthetic dataset, calculate summary statistics, and plot a histogram. Run the cells, retrieve the chart and notebook, then release the runtime created for this task after confirming the results are saved.
 
 The computation uses your Colab account and credits, with actions subject to your dot's permissions and approval settings.
+
+The integration exposes notebook tools through the **Model Context Protocol (MCP)**. Your dot can use those tools to turn a request into an editable notebook, saved charts, and downloadable data. [Follow the complete setup and first-analysis tutorial](https://kaiqin04.github.io/chatgpt-colab-plugin/guides/dot-colab/).
 
 ## Local development
 
