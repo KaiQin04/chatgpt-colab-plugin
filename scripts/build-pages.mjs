@@ -44,6 +44,7 @@ const document = (route) => {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <meta name="description" content="${escapeHtml(description)}">
+${route.path === '' ? '<meta name="google-site-verification" content="bVodu5i3FJ0DlDnZ5i_nsTNorbMf03zyYwwvAWKSgro">' : ''}
 <meta name="theme-color" content="#eff3f6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#101922" media="(prefers-color-scheme: dark)">
 <link rel="canonical" href="${url}">

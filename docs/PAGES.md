@@ -43,7 +43,12 @@ Crawlers read robots.txt at the origin root. This project-site deployment does
 not control that path; a `robots.txt` inside the project subdirectory would not
 control crawling, so the build does not create one. Do not imply that allowing a crawler guarantees
 indexing or AI citations. Search Console ownership/submission is a separate
-account action; no verification credential is embedded here.
+account action. The English homepage includes the public Google site-verification
+meta tag for the exact URL-prefix property above. Keep that tag after verification
+so Google can recheck ownership; it is not an OAuth token or a client secret.
+Submit `sitemap.xml` within this property and check its processing status separately
+from page indexing. Keep any future verification changes scoped to the intended
+Google account and this project URL.
 
 Keep `website/`, this guide, the Pages workflow, and its build script when
 synchronizing a later public release. They are public packaging maintained in
