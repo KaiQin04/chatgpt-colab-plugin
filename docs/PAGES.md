@@ -8,6 +8,12 @@ Traditional Chinese uses `/zh-TW/`. Each tutorial links to its translation.
 
 - Edit bilingual content in `website/content.mjs` and styles in
   `website/assets/style.css`.
+- `website/assets/tokens.css` and `cold-porcelain.css` are retained copies of
+  the Cold Porcelain design-system assets. Keep palette and type defaults there;
+  `style.css` contains site layout and the requested Quote/Finding adaptations.
+  The document follows the system theme with `data-theme="auto"`. Google Fonts
+  supplies Spectral, Noto Serif TC, LXGW WenKai TC, IBM Plex Sans, Noto Sans TC,
+  and IBM Plex Mono; the token font stacks include local fallbacks.
 - `scripts/build-pages.mjs` supplies the shared layout, metadata, language
   alternates, structured data, and sitemap. Change its origin/base together if
   moving the site. It validates local links and fragment targets.

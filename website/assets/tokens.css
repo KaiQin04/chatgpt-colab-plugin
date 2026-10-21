@@ -1,0 +1,178 @@
+/* 冷瓷 Cold Porcelain — tokens. 由 tokens.json 產生；改值請改 tokens.json。
+   主題：<html data-theme="light">（白瓷，預設）、"dark"（霽藍）、"auto"（跟著系統）。 */
+
+:root, [data-theme="light"] {
+  --porcelain: #eff3f6;
+  --surface: #fafcfd;
+  --surface-sunken: #e3eaee;
+  --line: #cfd8df;
+  --line-strong: #74828e;
+  --ink: #1f2d3d;
+  --ink-muted: #546271;
+  --ink-faint: #8994a0;
+  --jilan: #34577d;
+  --jilan-hover: #2a4868;
+  --jilan-soft: #dde7f1;
+  --on-jilan: #fafcfd;
+  --seal: #944a77;
+  --seal-soft: #f2e4ec;
+  --on-seal: #fafcfd;
+  --celadon: #6f959a;
+  --lilac: #776a91;
+  --moon: #b8c8d3;
+  --iron: #5e6b78;
+  --ok: #2e6a62;
+  --ok-soft: #dfeeea;
+  --watch: #80621a;
+  --watch-soft: #f3ebd8;
+  --alert: #9e3b2e;
+  --alert-soft: #f6e4e0;
+  --data-1: var(--jilan);
+  --data-2: var(--lilac);
+  --data-3: var(--celadon);
+  --data-4: var(--moon);
+  --data-ref: var(--iron);
+  --data-highlight: var(--seal);
+  --seq-1: #dce5ec;
+  --seq-2: #afc3d3;
+  --seq-3: #7e9bb5;
+  --seq-4: #506f93;
+  --seq-5: #2a4668;
+  --div-low: var(--jilan);
+  --div-mid: var(--surface-sunken);
+  --div-high: var(--alert);
+  --shadow-float: 0 1px 2px #1f2d3d14, 0 8px 24px -8px #1f2d3d33;
+  --focus-ring: 0 0 0 2px #eff3f6, 0 0 0 4px #34577d;
+}
+
+[data-theme="dark"] {
+  --porcelain: #101922;
+  --surface: #16212c;
+  --surface-sunken: #0b121a;
+  --line: #28343f;
+  --line-strong: #6f7e8c;
+  --ink: #e2e8ee;
+  --ink-muted: #9aa7b4;
+  --ink-faint: #66727e;
+  --jilan: #9cbbdf;
+  --jilan-hover: #b6cde8;
+  --jilan-soft: #1c3048;
+  --on-jilan: #0e1620;
+  --seal: #d48db8;
+  --seal-soft: #3a2332;
+  --on-seal: #0e1620;
+  --celadon: #62868a;
+  --lilac: #a193bf;
+  --moon: #4e6070;
+  --iron: #8190a0;
+  --ok: #80c4b5;
+  --ok-soft: #17312c;
+  --watch: #d6b464;
+  --watch-soft: #33291a;
+  --alert: #e39383;
+  --alert-soft: #3b211c;
+  --data-1: var(--jilan);
+  --data-2: var(--lilac);
+  --data-3: var(--celadon);
+  --data-4: var(--moon);
+  --data-ref: var(--iron);
+  --data-highlight: var(--seal);
+  --seq-1: #1d2b3a;
+  --seq-2: #2e4760;
+  --seq-3: #4a6e91;
+  --seq-4: #7699c0;
+  --seq-5: #b0cae6;
+  --div-low: var(--jilan);
+  --div-mid: var(--surface-sunken);
+  --div-high: var(--alert);
+  --shadow-float: 0 1px 2px #00000066, 0 12px 32px -8px #000000b3;
+  --focus-ring: 0 0 0 2px #101922, 0 0 0 4px #9cbbdf;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    --porcelain: #101922;
+    --surface: #16212c;
+    --surface-sunken: #0b121a;
+    --line: #28343f;
+    --line-strong: #6f7e8c;
+    --ink: #e2e8ee;
+    --ink-muted: #9aa7b4;
+    --ink-faint: #66727e;
+    --jilan: #9cbbdf;
+    --jilan-hover: #b6cde8;
+    --jilan-soft: #1c3048;
+    --on-jilan: #0e1620;
+    --seal: #d48db8;
+    --seal-soft: #3a2332;
+    --on-seal: #0e1620;
+    --celadon: #62868a;
+    --lilac: #a193bf;
+    --moon: #4e6070;
+    --iron: #8190a0;
+    --ok: #80c4b5;
+    --ok-soft: #17312c;
+    --watch: #d6b464;
+    --watch-soft: #33291a;
+    --alert: #e39383;
+    --alert-soft: #3b211c;
+    --data-1: var(--jilan);
+    --data-2: var(--lilac);
+    --data-3: var(--celadon);
+    --data-4: var(--moon);
+    --data-ref: var(--iron);
+    --data-highlight: var(--seal);
+    --seq-1: #1d2b3a;
+    --seq-2: #2e4760;
+    --seq-3: #4a6e91;
+    --seq-4: #7699c0;
+    --seq-5: #b0cae6;
+    --div-low: var(--jilan);
+    --div-mid: var(--surface-sunken);
+    --div-high: var(--alert);
+    --shadow-float: 0 1px 2px #00000066, 0 12px 32px -8px #000000b3;
+    --focus-ring: 0 0 0 2px #101922, 0 0 0 4px #9cbbdf;
+  }
+}
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-full: 9999px;
+  --measure-cjk: 36em;
+  --measure-latin: 66ch;
+  --page-max: 1200px;
+  --opacity-disabled: 0.45;
+  --font-serif: "Spectral", "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", serif;
+  --font-kai: "Spectral", "LXGW WenKai TC", "Kaiti TC", "BiauKai", "DFKai-SB", serif;
+  --font-sans: "IBM Plex Sans", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: "IBM Plex Mono", "Noto Sans Mono CJK TC", ui-monospace, monospace;
+}
+
+/* 字級：class 名稱是 cp-type-<樣式名>，樣式名與 tokens.json、品牌手冊一致 */
+.cp-type-display { font-family: var(--font-serif); font-size: 48px; line-height: 60px; font-weight: 500; letter-spacing: 0.02em; }
+.cp-type-title { font-family: var(--font-serif); font-size: 36px; line-height: 48px; font-weight: 500; letter-spacing: 0.02em; }
+.cp-type-heading { font-family: var(--font-serif); font-size: 24px; line-height: 36px; font-weight: 600; }
+.cp-type-subheading { font-family: var(--font-serif); font-size: 21px; line-height: 32px; font-weight: 600; }
+.cp-type-body { font-family: var(--font-serif); font-size: 18px; line-height: 32px; font-weight: 400; }
+.cp-type-body-compact { font-family: var(--font-serif); font-size: 16px; line-height: 28px; font-weight: 400; }
+.cp-type-slip { font-family: var(--font-serif); font-size: 30px; line-height: 30px; font-weight: 500; letter-spacing: 0.16em; }
+.cp-type-quote { font-family: var(--font-kai); font-size: 21px; line-height: 38px; font-weight: 400; font-style: italic; font-synthesis: none; }
+.cp-type-statement { font-family: var(--font-kai); font-size: 18px; line-height: 32px; font-weight: 400; font-style: italic; font-synthesis: none; }
+.cp-type-annotation { font-family: var(--font-kai); font-size: 14px; line-height: 24px; font-weight: 400; font-style: italic; font-synthesis: none; }
+.cp-type-ui { font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 400; }
+.cp-type-label { font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.01em; }
+.cp-type-small { font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-weight: 400; }
+.cp-type-caption { font-family: var(--font-sans); font-size: 12px; line-height: 16px; font-weight: 400; }
+.cp-type-numeral { font-family: var(--font-sans); font-size: 40px; line-height: 48px; font-weight: 500; letter-spacing: -0.01em; }
+.cp-type-code { font-family: var(--font-mono); font-size: 14px; line-height: 22px; font-weight: 400; }

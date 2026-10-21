@@ -1,0 +1,153 @@
+/* 冷瓷 Cold Porcelain — 元件 class。載入順序：Google Fonts 連結 → tokens.css → 本檔。 */
+
+:root { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+@media (prefers-color-scheme: dark) { [data-theme="auto"] { color-scheme: dark; } }
+
+body {
+  margin: 0;
+  background: var(--porcelain);
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 32px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- utilities ---------- */
+.cp-prose { max-width: var(--measure-cjk); line-break: strict; text-autospace: normal; text-spacing-trim: normal; }
+.cp-prose p { margin: 0 0 var(--space-4); }
+.cp-kai { font-family: var(--font-kai); font-style: italic; font-synthesis: none; }
+.cp-em { text-emphasis: filled dot; -webkit-text-emphasis: filled dot; text-emphasis-position: under right; -webkit-text-emphasis-position: under; }
+.cp-num { font-family: var(--font-sans); font-variant-numeric: tabular-nums lining-nums; }
+.cp-rule { display: block; border: 0; height: 0; margin: var(--space-6) 0; border-top: 1px solid var(--line); }
+.cp-rule--double { height: 2px; border-bottom: 1px solid var(--line); }
+.cp-link { color: var(--jilan); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.cp-link:hover { text-decoration-thickness: 2px; }
+.cp-link:focus-visible { outline: none; border-radius: var(--radius-xs); box-shadow: var(--focus-ring); }
+
+/* ---------- Button ---------- */
+.cp-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  box-sizing: border-box; height: 40px; padding: 0 var(--space-4);
+  font-family: var(--font-sans); font-size: 16px; line-height: 24px; font-weight: 500;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--jilan);
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+.cp-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.cp-btn--primary { background: var(--jilan); color: var(--on-jilan); }
+.cp-btn--primary:hover { background: var(--jilan-hover); }
+.cp-btn--secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+.cp-btn--secondary:hover { background: var(--surface-sunken); }
+.cp-btn--quiet:hover { background: var(--jilan-soft); }
+.cp-btn:disabled, .cp-btn[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.cp-btn:disabled:hover { background: var(--surface); }
+.cp-btn--primary:disabled:hover { background: var(--jilan); }
+
+/* ---------- TextField ---------- */
+.cp-field { display: grid; gap: var(--space-1); width: 100%; max-width: 320px; font-family: var(--font-sans); }
+.cp-field__label { font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.01em; color: var(--ink); }
+.cp-input {
+  box-sizing: border-box; width: 100%; height: 40px; padding: 0 var(--space-3);
+  font-family: var(--font-sans); font-size: 16px; line-height: 24px; color: var(--ink);
+  font-variant-numeric: tabular-nums lining-nums;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  transition: border-color 150ms ease-out;
+}
+.cp-input::placeholder { color: var(--ink-muted); opacity: 1; }
+.cp-input:hover { border-color: var(--ink-muted); }
+.cp-input:focus-visible { outline: none; border-color: var(--jilan); box-shadow: var(--focus-ring); }
+.cp-field__hint { margin: 0; font-size: 14px; line-height: 22px; color: var(--ink-muted); }
+.cp-field--error .cp-input { border-color: var(--alert); }
+.cp-field--error .cp-field__hint { color: var(--alert); }
+
+/* ---------- Status ---------- */
+.cp-status {
+  display: inline-flex; align-items: center; gap: 6px; box-sizing: border-box; height: 24px; padding: 0 10px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans); font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap;
+}
+.cp-status::before { content: ""; box-sizing: border-box; flex: none; width: 8px; height: 8px; background: currentColor; }
+.cp-status--ok { background: var(--ok-soft); color: var(--ok); }
+.cp-status--ok::before { border-radius: 50%; }
+.cp-status--watch { background: var(--watch-soft); color: var(--watch); }
+.cp-status--watch::before { background: transparent; border: 2px solid currentColor; border-radius: 50%; }
+.cp-status--alert { background: var(--alert-soft); color: var(--alert); }
+.cp-status--alert::before { width: 7px; height: 7px; transform: rotate(45deg); border-radius: 1px; }
+
+/* ---------- Finding ---------- */
+.cp-finding { position: relative; margin: 0; padding-left: calc(12px + var(--space-3)); max-width: var(--measure-cjk); }
+.cp-finding::before { content: ""; position: absolute; left: 0; top: 11px; width: 12px; height: 12px; background: var(--seal); border-radius: var(--radius-xs); }
+.cp-finding__claim { margin: 0; font-family: var(--font-serif); font-size: 21px; line-height: 34px; font-weight: 500; color: var(--ink); }
+.cp-finding__key { color: var(--seal); font-weight: 600; font-variant-numeric: tabular-nums lining-nums; }
+.cp-finding__source { margin: var(--space-2) 0 0; font-family: var(--font-sans); font-size: 14px; line-height: 22px; color: var(--ink-muted); }
+
+/* ---------- Proposition ---------- */
+.cp-prop { margin: 0; padding: var(--space-4) 0; max-width: var(--measure-cjk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.cp-prop__head { margin: 0 0 var(--space-2); font-family: var(--font-serif); font-size: 18px; line-height: 32px; color: var(--ink); }
+.cp-prop__kind { font-weight: 600; }
+.cp-prop__name { color: var(--ink-muted); }
+.cp-prop__statement { margin: 0; font-family: var(--font-kai); font-style: italic; font-synthesis: none; font-size: 18px; line-height: 32px; color: var(--ink); }
+.cp-prop__proof { margin: var(--space-3) 0 0; font-family: var(--font-serif); font-size: 16px; line-height: 28px; color: var(--ink); }
+.cp-prop__proof-label { font-weight: 600; margin-right: 0.5em; }
+.cp-qed { float: right; margin-left: var(--space-4); color: var(--ink-muted); }
+
+/* ---------- Quote ---------- */
+.cp-quote { margin: 0; padding-left: 42px; max-width: var(--measure-cjk); }
+.cp-quote blockquote { margin: 0; font-family: var(--font-kai); font-style: italic; font-synthesis: none; font-size: 21px; line-height: 38px; color: var(--ink); }
+.cp-quote figcaption { margin-top: var(--space-2); font-family: var(--font-sans); font-size: 14px; line-height: 22px; color: var(--ink-muted); }
+.cp-quote figcaption::before { content: "——"; }
+
+/* ---------- DataTable ---------- */
+.cp-table-wrap { max-width: 100%; overflow-x: auto; }
+.cp-table {
+  border-collapse: collapse; min-width: 100%;
+  font-family: var(--font-sans); font-size: 16px; line-height: 24px; color: var(--ink);
+  font-variant-numeric: tabular-nums lining-nums;
+  border-top: 1.5px solid var(--ink); border-bottom: 1.5px solid var(--ink);
+}
+.cp-table caption { caption-side: top; text-align: left; padding-bottom: var(--space-2); font-family: var(--font-serif); font-size: 16px; line-height: 28px; font-weight: 600; color: var(--ink); }
+.cp-table th, .cp-table td { padding: 6px var(--space-3); text-align: left; vertical-align: baseline; white-space: nowrap; }
+.cp-table thead th { padding-top: var(--space-2); padding-bottom: var(--space-2); font-size: 14px; line-height: 20px; font-weight: 500; letter-spacing: 0.01em; color: var(--ink-muted); border-bottom: 1px solid var(--line-strong); }
+.cp-table tbody th { font-weight: 400; color: var(--ink); }
+.cp-table tbody tr:first-child td, .cp-table tbody tr:first-child th { padding-top: var(--space-2); }
+.cp-table tbody tr:last-child td, .cp-table tbody tr:last-child th { padding-bottom: var(--space-2); }
+.cp-table .cp-num { text-align: right; }
+.cp-table .is-best { font-weight: 600; }
+.cp-table-note { margin: var(--space-2) 0 0; max-width: var(--measure-cjk); font-family: var(--font-sans); font-size: 14px; line-height: 22px; color: var(--ink-muted); }
+
+/* ---------- Figure ---------- */
+.cp-figure { margin: 0; max-width: 720px; }
+.cp-figure__title { margin: 0 0 var(--space-3); font-family: var(--font-serif); font-size: 21px; line-height: 32px; font-weight: 600; color: var(--ink); }
+.cp-figure svg { display: block; max-width: 100%; height: auto; overflow: visible; }
+.cp-figure figcaption { margin-top: var(--space-2); max-width: var(--measure-cjk); font-family: var(--font-sans); font-size: 14px; line-height: 22px; color: var(--ink-muted); }
+.cp-chart text { font-family: var(--font-sans); font-size: 12px; fill: var(--ink-muted); font-variant-numeric: tabular-nums lining-nums; }
+.cp-chart .grid { stroke: var(--line); stroke-width: 1; }
+.cp-chart .axis { stroke: var(--line-strong); stroke-width: 1; }
+.cp-chart .ref { fill: none; stroke: var(--data-ref); stroke-width: 1.25; stroke-dasharray: 4 4; }
+.cp-chart .series { fill: none; stroke: var(--data-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.cp-chart .dot { fill: var(--data-1); }
+.cp-chart .dot--key { fill: var(--data-highlight); }
+.cp-chart .axis-title { font-size: 14px; }
+.cp-chart .label { font-size: 14px; fill: var(--ink); }
+.cp-chart .label--key { font-size: 14px; fill: var(--data-highlight); font-weight: 600; }
+
+/* ---------- TitleSlip ---------- */
+.cp-slide { position: relative; box-sizing: border-box; width: 960px; height: 540px; overflow: hidden; background: var(--porcelain); }
+.cp-slip {
+  position: absolute; left: 64px; top: 64px; box-sizing: border-box; width: 84px; height: 336px;
+  display: flex; flex-direction: column; align-items: center; padding: var(--space-6) 0 var(--space-4);
+  background: var(--surface); border: 1px solid var(--line-strong); outline: 1px solid var(--line); outline-offset: -6px;
+}
+.cp-slip__title { margin: 0; writing-mode: vertical-rl; text-orientation: mixed; font-family: var(--font-serif); font-size: 30px; line-height: 30px; font-weight: 500; letter-spacing: 0.16em; color: var(--ink); }
+.cp-slip__seal { margin-top: auto; width: 14px; height: 14px; background: var(--seal); border-radius: var(--radius-xs); }
+.cp-slide__meta { position: absolute; left: 212px; right: 64px; bottom: 64px; }
+.cp-slide__meta .cp-rule { margin: 0; }
+.cp-slide__latin { margin: var(--space-4) 0 0; font-family: var(--font-serif); font-style: italic; font-size: 28px; line-height: 36px; font-weight: 400; color: var(--ink-muted); }
+.cp-slide__byline { margin: var(--space-2) 0 0; font-family: var(--font-sans); font-size: 14px; line-height: 22px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cp-btn, .cp-input { transition: none; }
+}
