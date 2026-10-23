@@ -108,6 +108,7 @@ details p { margin: var(--space-4) 0 0; }
 footer { padding-block: var(--space-8); color: var(--ink-muted); }
 footer .wrap { display: flex; justify-content: space-between; gap: var(--space-8); }
 footer p { margin: 0; }
+.footer-links { display: flex; flex-wrap: wrap; align-content: start; gap: var(--space-4); }
 .article-head { padding-block: var(--space-16) var(--space-8); }
 .article-head h1 { max-width: var(--measure-cjk); }
 .article-layout {

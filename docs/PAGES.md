@@ -3,11 +3,16 @@
 The public introduction and dot tutorial live at
 https://kaiqin04.github.io/chatgpt-colab-plugin/ . English is the default;
 Traditional Chinese uses `/zh-TW/`. Each tutorial links to its translation.
+The maintainer's personal deployment notices live at `/privacy/` and `/terms/`,
+with translations at `/zh-TW/privacy/` and `/zh-TW/terms/`. These describe only
+that deployment; other operators must provide their own notices.
 
 ## Edit and validate
 
 - Edit bilingual content in `website/content.mjs` and styles in
   `website/assets/style.css`.
+- Edit approved privacy and terms content in `website/legal.mjs`. Keep the
+  English and Traditional Chinese notices aligned and update their effective date.
 - `website/assets/tokens.css` and `cold-porcelain.css` are retained copies of
   the Cold Porcelain design-system assets. Keep palette and type defaults there;
   `style.css` contains site layout and the requested Quote/Finding adaptations.
@@ -20,7 +25,7 @@ Traditional Chinese uses `/zh-TW/`. Each tutorial links to its translation.
 - Run `node scripts/build-pages.mjs`. Only explicitly listed static files are copied to
   `dist/pages`; no backend, OAuth settings, evidence, or runtime data is included.
 - Preview under `/chatgpt-colab-plugin/`, not just `/`, to check nested asset and
-  language links. Check both languages and both page types at desktop and mobile
+  language links. Check both languages and all page types at desktop and mobile
   widths, plus keyboard navigation and reduced motion.
 - Update the editorial date and release baseline only when the content changes.
   Existing screenshot provenance is documented in `docs/images/README.md`.
@@ -32,7 +37,7 @@ builds without installing app dependencies, uploads only `dist/pages`, and
 publishes on relevant changes to `main` or a manual dispatch. Publishing this
 static site never deploys the private notebook backend.
 
-After publication, check the workflow's commit SHA, fetch all four public page
+After publication, check the workflow's commit SHA, fetch all eight public page
 URLs, compare their bytes with the local build, and check CSS, images, and
 `sitemap.xml`. In a browser, inspect mobile/desktop layout and language links.
 
