@@ -1,5 +1,7 @@
 # ChatGPT Colab Plugin — Run Python notebooks with your dot
 
+
+[![M8ven Score](https://m8ven.ai/badge/mcp/kaiqin04-chatgpt-colab-plugin-18td81?v=8e77585721d0acc5f85c3cbccd6777eb)](https://m8ven.ai/mcp/kaiqin04-chatgpt-colab-plugin-18td81?s=readme)
 **Run Colab notebooks in ChatGPT using your own Colab compute credits.**
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
