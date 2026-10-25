@@ -17,13 +17,13 @@ The backend trusts identity headers supplied by Sites after authentication. Do n
 Clone the repository and select a tagged release, for example `git switch --detach v0.2.0`. The public template must not contain an existing Site ID, OAuth secret, or user data.
 
 ```sh
-npm ci
+npm run install:ci
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements-test.txt
 npm run check
 ```
 
-npm ci installs both lockfiles. The test and build commands generate the ignored UI bundle from readable source; do not copy or commit generated bundles.
+`npm run install:ci` explicitly installs both lockfiles. The test and build commands generate the ignored UI bundle from readable source; do not copy or commit generated bundles.
 
 ## 2. Create a separate private Site
 

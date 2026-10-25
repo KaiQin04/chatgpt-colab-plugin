@@ -84,14 +84,14 @@ Google 帳號授權與必要的設定仍需本人完成。這不是安裝後零�
 ```sh
 git clone https://github.com/KaiQin04/chatgpt-colab-plugin.git
 cd chatgpt-colab-plugin
-npm ci
+npm run install:ci
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements-test.txt
 npm run check
 npm run build
 ```
 
-npm ci 會安裝兩份鎖檔；測試、型別檢查、預覽與正式建置會自動生成 ignored UI bundle，Git 保留可讀來源。
+`npm run install:ci` 會明確安裝兩份鎖檔；測試、型別檢查、預覽與正式建置會自動生成 ignored UI bundle，Git 保留可讀來源。
 
 `npm run dev:ui` 在 localhost 啟動合成資料預覽，不會連線 Google 或使用 Colab 額度。Python harness 使用本專案 `.venv/bin/python`；也可設定 `NOTEBOOK_TEST_PYTHON`。沒有 Python 時部分測試會跳過，不能當成完整驗證通過。
 

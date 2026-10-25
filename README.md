@@ -89,14 +89,14 @@ Requires Node.js 22.13+, npm, and uv for the Python test environment.
 ```sh
 git clone https://github.com/KaiQin04/chatgpt-colab-plugin.git
 cd chatgpt-colab-plugin
-npm ci
+npm run install:ci
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements-test.txt
 npm run check
 npm run build
 ```
 
-npm ci installs both lockfiles. Tests, typechecking, previews and production builds generate the ignored UI bundle automatically; Git retains readable sources.
+`npm run install:ci` explicitly installs both lockfiles. Tests, typechecking, previews and production builds generate the ignored UI bundle automatically; Git retains readable sources.
 
 `npm run dev:ui` starts a localhost preview with synthetic data. It does not connect to Google or consume Colab credits. Python harnesses use `.venv/bin/python`, or the interpreter specified by `NOTEBOOK_TEST_PYTHON`. Missing Python can cause skipped tests; that is not a complete validation pass.
 

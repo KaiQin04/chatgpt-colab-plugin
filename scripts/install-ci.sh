@@ -178,6 +178,9 @@ if [[ ! -x "${vinext}" ]]; then
   exit 69
 fi
 
+# Keep both installations under the same managed environment and install lock.
+node "${script_dir}/install-notebook-ui.mjs"
+
 node --input-type=module - "${SITES_PROJECT_ROOT}/node_modules/.sites-install.json" "${lockfile_sha256}" <<'NODE'
 import { writeFile } from "node:fs/promises";
 
@@ -190,4 +193,4 @@ await writeFile(
   }, null, 2)}\n`,
 );
 NODE
-echo "[sites] npm ci passed and vinext is available"
+echo "[sites] both lockfiles installed and vinext is available"

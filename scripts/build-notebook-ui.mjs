@@ -2,7 +2,7 @@
  * Build ui/ into one self-contained HTML document and write it as a TS module
  * (lib/notebook/ui-bundle.generated.ts) so the Worker and Node tests can import
  * it without loaders. The module is ignored by Git and generated before tests,
- * typechecking, development and production builds. Run npm ci to install both
+ * typechecking, development and production builds. Run npm run install:ci to install both
  * lockfiles, then npm run build:ui to generate it explicitly.
  */
 import { createHash } from "node:crypto";
@@ -36,7 +36,7 @@ export function uiSourceHash() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { check: { type: "boolean", default: false } } });
   if (!existsSync(join(uiDir, "node_modules"))) {
-    console.error("UI dependencies missing: run `npm ci` (or `npm ci --prefix ui` if install scripts were disabled).");
+    console.error("UI dependencies missing: run `npm run install:ci` (or install both lockfiles explicitly).");
     process.exit(1);
   }
   await build({ configFile: join(uiDir, "vite.config.ts"), logLevel: "warn" });

@@ -16,15 +16,21 @@ Notebook UI 模組及中間 bundle。舊版 tag 保留原有檔案。
 使用 Node.js 24 LTS：
 
 ```sh
-npm ci
+npm run install:ci
 npm run check:ui
 npm run check
 npm run build
 ```
 
-根目錄 `postinstall` 會以 development、optional 依賴執行 `npm ci --prefix ui`，
-因此兩份 lockfile 均會安裝。若明確停用 install scripts，需先另執行
+自 v0.3.3 起，`npm run install:ci` 明確安裝主程式與 UI 兩份 lockfile，包含
+development 與 optional 依賴。根目錄沒有 `postinstall` 或其他自動安裝
+lifecycle。單獨執行根目錄 `npm ci` 只安裝主程式；手動安裝時需再執行
 `npm ci --prefix ui --include=dev --include=optional`。
+
+portable 與 managed Linux 入口共用有時間上限的 UI 安裝步驟；managed 路徑讓
+兩次安裝沿用隔離環境與同一把安裝鎖。任一步驟失敗都會讓 setup 命令失敗。
+依賴套件仍可能有自己的安裝腳本，這次移除的是根專案的自動 hook。不要以全域
+`ignore-scripts` 代替修正，因為它也會跳過 test/build 前的 UI 生成 hooks。
 
 npm lifecycle 會在 `test`、`typecheck`、`dev`、`dev:ui`、`build` 前自動生成
 模組，乾淨 checkout 也適用。`check:ui` 先生成，再獨立重建並逐位元比對；低階
@@ -39,7 +45,9 @@ npm lifecycle 會在 `test`、`typecheck`、`dev`、`dev:ui`、`build` 前自動
 
 M8ven 報告列出一個壓縮／打包檔案，但未提供檔名。v0.3.2 前，此生成模組是
 受追蹤 JS／TS 中唯一單行超過 20,000 字元的檔案；重建逐位元一致，支持警示
-來自建置產物的判斷。因報告沒有公開檔名，仍未確認警示的精確對象。
+來自建置產物的判斷。後續對 v0.3.2 commit
+`2764088a9661df01b21473e02795541cd9573a00` 的掃描已顯示無混淆碼、0 項失敗，
+剩餘 1 項根安裝 hook 警示。v0.3.3 移除此 hook；新版本的掃描狀態仍需核對新 commit。
 
 移除目前 Git 樹中的生成產物可以改善來源審查，但不保證特定評分，也不能取代
 來源與依賴安全檢查。警示是否改變，必須以新 commit 的實際重掃結果確認。

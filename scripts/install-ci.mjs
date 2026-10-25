@@ -45,5 +45,12 @@ try {
   );
 } catch {
   console.error("npm ci exited successfully but the local vinext executable is unavailable.");
-  process.exitCode = 69;
+  process.exit(69);
 }
+
+const ui = spawnSync(process.execPath, [path.join(projectRoot, "scripts/install-notebook-ui.mjs")], {
+  stdio: "inherit",
+});
+if (ui.error) throw ui.error;
+if (ui.signal) process.kill(process.pid, ui.signal);
+process.exitCode = ui.status ?? 1;
