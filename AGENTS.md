@@ -20,8 +20,8 @@
 ## 修改與驗證
 
 - 公開首頁 README.md 使用英文，README.zh-TW.md 保留繁體中文；部署與 OAuth 指南維持中英互相連結。核心介紹是「Run Colab notebooks in ChatGPT using your own Colab compute credits.」不得把英文文件改回僅中文。程式碼與識別字使用英文。先找既有 scripts，不猜 target。
-- npm ci、npm ci --prefix ui；Python 使用本 repo .venv 或明確的 NOTEBOOK_TEST_PYTHON，不用全域 Python 環境。
-- 修改 ui/、lib/notebook/client.ts 或 contract.ts 後，執行 npm run build:ui。生成檔需一起提交。
+- npm ci 會依兩份 lockfile 安裝主程式與 UI 依賴；若停用 install scripts，需另執行 npm ci --prefix ui。Python 使用本 repo .venv 或明確的 NOTEBOOK_TEST_PYTHON，不用全域 Python 環境。
+- UI bundle 由可讀來源在 test、typecheck、dev、dev:ui、build 前自動生成；npm run check:ui 會再重建並逐位元比對。lib/notebook/ui-bundle.generated.ts 與 .ui-build/ 必須維持 ignored，不得提交生成產物。
 - 執行 npm run check 與 npm run build；對外發布另執行 npm run audit:public。Golden 只能針對預期變更更新並檢查差異；不得藉更新 golden 掩蓋未知回歸。
 - 合成測試不能冒充 Google OAuth、真實 Colab 或新帳戶部署驗證。不得為包裝／文件工作自行開啟 runtime 或花費額度。
 - MCP UI-only aliases 僅記錄操作來源，不是授權邊界；所有路徑仍需相同 owner 驗證。

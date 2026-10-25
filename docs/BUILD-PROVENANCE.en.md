@@ -2,46 +2,55 @@
 
 [繁體中文](BUILD-PROVENANCE.md)
 
-`lib/notebook/ui-bundle.generated.ts` contains the notebook editor as a single,
-minified HTML/JavaScript/CSS string. `scripts/build-notebook-ui.mjs` builds the
-readable `ui/` source with Vite and embeds the result in a TypeScript module.
-`ui/vite.config.ts` explicitly enables minification. This is generated build
-output; the original application source is included in this repository.
+From v0.3.2, Git tracks the readable UI source, build scripts and dependency
+lockfiles. It does not track the generated notebook UI module or intermediate
+bundles. Historical release tags retain their original files.
 
-The self-contained document supports the MCP Apps panel without loading scripts
-or styles from an external host. Minification reduces its transfer size. A
-scanner may classify the long string as obfuscated or unreadable code; that
-classification alone does not establish malicious behavior.
+The production build creates ignored `lib/notebook/ui-bundle.generated.ts`
+from `ui/` and the shared notebook modules using `scripts/build-notebook-ui.mjs`.
+The resulting self-contained HTML/JavaScript/CSS supports the MCP Apps panel
+without loading scripts or styles from an external host. Vite minification
+keeps the deployed document within its size budget. Deployment artifacts still
+contain the built UI; source repositories and source archives contain readable
+inputs instead.
 
 ## Reproduce and verify
 
-Use Node.js 24 LTS and install both lockfiles before checking:
+Use Node.js 24 LTS:
 
 ```sh
-npm run install:ci
-npm ci --prefix ui
+npm ci
 npm run check:ui
+npm run check
+npm run build
 ```
 
-`check:ui` rebuilds into ignored `.ui-build/` and compares the complete generated
-module byte-for-byte with the committed file. It exits unsuccessfully on any
-difference, including edits that leave `NOTEBOOK_UI_SOURCE_HASH` unchanged. It
-does not overwrite the committed module. `npm run check` includes this check.
-To intentionally regenerate the module, run `npm run build:ui`, inspect the
-source/dependency changes and generated diff, and rerun the checks.
+The root `postinstall` runs `npm ci --prefix ui` with development and optional
+dependencies, so both lockfiles are installed. If installation scripts are
+explicitly disabled, run `npm ci --prefix ui --include=dev --include=optional`
+before these commands.
 
-## Investigation on 2026-10-25
+The npm lifecycle generates the module before `test`, `typecheck`, `dev`,
+`dev:ui` and `build`, including on a clean checkout. `check:ui` first generates
+it, then independently rebuilds and compares every byte. The low-level
+`node scripts/build-notebook-ui.mjs --check` only compares and fails if the
+existing module is missing, stale or different. `npm run build:ui` is also
+available for explicit generation. Do not commit the module or `.ui-build/`.
 
-M8ven's public report for commit `0ca092ac77e813ec6b8252c1bb695585f99c73ce`
-flagged one unreadable/minified file without naming it. The generated module
-was the only tracked JS/TS file with a line longer than 20,000 characters.
-Rebuilding the pre-update module with its installed dependencies reproduced
-every byte; its SHA-256 was
-`a3dcf182cec7431c93cdd76eb610cf43319d332844bc036d8d54f09d127c65c8`.
+A regression test uses an isolated source tree without the generated module,
+runs the real Vite/TypeScript pipeline, changes a source input and checks that
+it rebuilds. Runtime tests also check the source hash, self-contained document,
+size budget, sanitization and access boundaries.
 
-This establishes the module's build provenance and strongly supports a
-minification classification rather than concealed application source. Exact
-attribution of M8ven's finding remains unconfirmed because its public report
-does not disclose a filename. No dispute or publisher email was submitted as
-part of this investigation. Reproducibility is not a substitute for reviewing
-the source or dependencies for security defects.
+## Scanner interpretation
+
+M8ven's report flagged one minified/bundled file without naming it. Before
+v0.3.2, the generated module was the only tracked JS/TS file with a line longer
+than 20,000 characters. Rebuilding it reproduced every byte, strongly supporting
+a generated-build-output classification. Exact attribution remains unconfirmed
+because the public report does not disclose a filename.
+
+Removing generated output from the current Git tree makes the source easier to
+review. It does not guarantee a particular scanner grade or replace source and
+dependency security review. Only a fresh scan of the new commit can establish
+whether the scanner's warning has changed.

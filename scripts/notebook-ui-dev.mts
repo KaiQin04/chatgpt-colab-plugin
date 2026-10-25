@@ -1,7 +1,7 @@
 /**
  * Local notebook UI dev server: the real notebook service on an in-memory D1
  * (tests/helpers.ts) with a simulated Colab runtime. No network, no Google
- * account, no compute units. Run: npm run build:ui && npm run dev:ui
+ * account, no compute units. Run: npm run dev:ui
  * Header `x-dev-actor: assistant` makes a request act as ChatGPT.
  */
 import { createServer } from "node:http";

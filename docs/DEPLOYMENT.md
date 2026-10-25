@@ -18,12 +18,12 @@ Clone 本 repo，選擇維護者標記的版本，例如 `git switch --detach v0
 
 ```sh
 npm ci
-npm ci --prefix ui
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements-test.txt
-npm run build:ui
 npm run check
 ```
+
+npm ci 會安裝兩份鎖檔；測試與建置會由可讀來源生成 ignored UI bundle，不需複製或提交生成檔。
 
 ## 2. 建立新的私人 Site
 

@@ -1,7 +1,9 @@
 /**
  * Build ui/ into one self-contained HTML document and write it as a TS module
  * (lib/notebook/ui-bundle.generated.ts) so the Worker and Node tests can import
- * it without loaders. Run once: npm install --prefix ui; then: npm run build:ui
+ * it without loaders. The module is ignored by Git and generated before tests,
+ * typechecking, development and production builds. Run npm ci to install both
+ * lockfiles, then npm run build:ui to generate it explicitly.
  */
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -34,7 +36,7 @@ export function uiSourceHash() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { check: { type: "boolean", default: false } } });
   if (!existsSync(join(uiDir, "node_modules"))) {
-    console.error("UI dependencies missing: run `npm install --prefix ui` first.");
+    console.error("UI dependencies missing: run `npm ci` (or `npm ci --prefix ui` if install scripts were disabled).");
     process.exit(1);
   }
   await build({ configFile: join(uiDir, "vite.config.ts"), logLevel: "warn" });
@@ -52,13 +54,13 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const generatedPath = join(root, "lib/notebook/ui-bundle.generated.ts");
   if (values.check) {
     if (!existsSync(generatedPath) || readFileSync(generatedPath, "utf8") !== generated) {
-      console.error("Committed notebook UI differs from the source build. Run npm run build:ui and review the diff.");
+      console.error("Generated notebook UI differs from a fresh source build. Review source/lockfile changes and rerun npm run check:ui.");
       process.exitCode = 1;
     } else {
-      console.log(`Notebook UI reproduced byte-for-byte (${html.length} bytes).`);
+      console.log(`Notebook UI reproduced byte-for-byte (${Buffer.byteLength(html)} bytes).`);
     }
   } else {
     writeFileSync(generatedPath, generated);
-    console.log(`notebook UI: ${html.length} bytes`);
+    console.log(`notebook UI: ${Buffer.byteLength(html)} bytes`);
   }
 }

@@ -18,12 +18,12 @@ Clone the repository and select a tagged release, for example `git switch --deta
 
 ```sh
 npm ci
-npm ci --prefix ui
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements-test.txt
-npm run build:ui
 npm run check
 ```
+
+npm ci installs both lockfiles. The test and build commands generate the ignored UI bundle from readable source; do not copy or commit generated bundles.
 
 ## 2. Create a separate private Site
 

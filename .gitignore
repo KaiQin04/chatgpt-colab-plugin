@@ -67,3 +67,6 @@ next-env.d.ts
 /client_secret*.json
 /credentials*.json
 /.claude/
+
+# Generated from readable sources before tests and builds.
+/lib/notebook/ui-bundle.generated.ts
