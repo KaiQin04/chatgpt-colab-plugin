@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — 2026-10-25
+
+- Patch Next.js, React Server Components (including the Vite RSC plugin's vendored copy), Vinext, Vite, Cloudflare build tooling, DOMPurify, Zod and affected transitive dependencies. Both npm lockfiles have no known vulnerabilities in the release-time npm audit.
+- Preserve connector preview validation behavior while migrating its record schemas to Zod 4; add regression coverage for JSON records and strict envelopes.
+- Add `npm run check:ui` to reproduce and compare the complete committed UI bundle byte-for-byte. Include bilingual build provenance documentation for minification-related scanner warnings.
+- Rebuild the notebook panel and update only the expected panel URI, length and digest snapshots. No database migration is required.
+
+Upgrading an existing deployment still requires applying and deploying this release to that Site. Preserve its identity, origin, secrets, data and audience. Automated checks and synthetic browser validation do not establish fresh Google OAuth or live Colab execution compatibility.
+
 ## 0.3.0 — 2026-10-19
 
 - Reconcile externally terminated runtimes using two complete provider absence observations at least 15 seconds apart. Failed or cancelled queries invalidate older absence evidence. Saved outputs remain available; unresolved execution and unsaved artifacts stay explicitly incomplete or blocked.
