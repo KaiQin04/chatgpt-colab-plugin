@@ -25,7 +25,7 @@
     },
     "_meta": {
       "ui": {
-        "resourceUri": "ui://colab-spike/panel-364a5e57b405b758.html"
+        "resourceUri": "ui://colab-spike/panel-3c6f61aaaf050f2f.html"
       },
       "openai/ui": {
         "entrypoints": [
@@ -185,7 +185,7 @@
   {
     "name": "open_notebook",
     "title": "Open a CPU or GPU notebook",
-    "description": "Create/reopen one notebook runtime and persistent Python kernel. compute defaults to CPU; specify an exact current eligible GPU or AUTO (GPU intent, priority L4/T4/A100/G4 then other eligible GPUs alphabetically). AUTO is a general default, not VRAM/workload inference; specify the required GPU for large workloads. Selection happens once before allocation; refusals never queue, fall back or allocate another machine. Uses Colab compute until close. No product-wide runtime cap; each notebook retains its own allocation/unknown lock. Reuse identical notebookId, compute and idempotencyKey for network retries. TPU unsupported.",
+    "description": "Create/reopen one notebook runtime and persistent Python kernel. compute defaults to CPU; specify an exact current eligible GPU or AUTO (GPU intent, priority L4/T4/A100/G4 then other eligible GPUs alphabetically). AUTO is a general default, not VRAM/workload inference; specify the required GPU for large workloads. Selection happens once before allocation; refusals never queue, fall back or allocate another machine. Uses Colab compute until close. No product-wide runtime cap; each notebook retains its own allocation/unknown lock. Allocation GET and POST share a two-hour application budget; external hosts or cancellation may end it sooner. This is not a background allocation queue. After a disconnect, read get_notebook/get_compute_status; never resend allocation with a new key or notebook to bypass an unknown lock. Reuse identical notebookId, compute and idempotencyKey for network retries. TPU unsupported.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -23,10 +23,12 @@ export function endpoint(value: unknown): string {
 }
 
 export class ColabClient {
+  private tokenObtainedAt = Date.now();
   constructor(
-    readonly token: string,
+    public token: string,
     readonly fetcher: Fetcher,
     readonly statuses: Statuses = {},
+    readonly refreshAccessToken?: (signal?: AbortSignal) => Promise<string>,
   ) {}
 
   async request(method: string, path: string, stage: string,
@@ -34,6 +36,13 @@ export class ColabClient {
       params?: Record<string, string>; xsrf?: string; signal?: AbortSignal; timeoutMs?: number;
     } = {}): Promise<Record<string, unknown>> {
     requireActive(options.signal, stage);
+    // A long allocation can outlive its access token. Refresh before subsequent
+    // verification or cleanup, never replay the allocation request on a 401.
+    if (this.refreshAccessToken && Date.now() - this.tokenObtainedAt >= 30 * 60 * 1000) {
+      this.token = await this.refreshAccessToken(options.signal);
+      this.tokenObtainedAt = Date.now();
+      requireActive(options.signal, stage);
+    }
     const url = new URL(path, COLAB_ORIGIN);
     url.search = new URLSearchParams({ authuser: "0", ...options.params }).toString();
     return requestJson(this.fetcher, url, {

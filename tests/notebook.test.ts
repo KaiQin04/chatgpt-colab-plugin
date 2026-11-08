@@ -978,3 +978,36 @@ test("bootstrap setup dispatches only once in short reads, excludes cell/import,
     assert.equal(closed.released, true); assert.equal(f.remote.setupSubmissions, before + 1);
   } finally { f.close(); }
 });
+
+test("open service survives two-hour allocation, concurrent reads stay short and retries do not allocate", async (t) => {
+  const f = await setup();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const original = f.remote.allocate.bind(f.remote);
+    let resume!: () => void;
+    let activeSignal: AbortSignal | undefined;
+    let started!: () => void;
+    const allocationStarted = new Promise<void>(resolve => { started = resolve; });
+    f.remote.allocate = async (hash, signal, capture, attempt, choice) => {
+      activeSignal = signal;
+      started();
+      await new Promise<void>(resolve => { resume = resolve; });
+      return original(hash, signal, capture, attempt, choice);
+    };
+    const args = { notebookId: otherId, idempotencyKey: "long-open-synthetic" };
+    const pending = f.call("open_notebook", args);
+    await allocationStarted;
+    assert.ok(activeSignal);
+    t.mock.timers.tick(7_200_000); await setImmediate();
+    assert.equal(activeSignal.aborted, false);
+    const view = await f.call("get_notebook", { notebookId: otherId });
+    assert.equal((view.notebook as any).state, "opening");
+    const cached = await f.call("open_notebook", args);
+    assert.equal(cached.cached, true);
+    assert.equal(f.remote.allocations, 1, "only the setup runtime was allocated so far");
+    resume();
+    const opened = await pending;
+    assert.equal((opened.notebook as any).runtime.released, false);
+    assert.equal(f.remote.allocations, 2, "one allocation for the requested notebook");
+  } finally { t.mock.timers.reset(); f.close(); }
+});

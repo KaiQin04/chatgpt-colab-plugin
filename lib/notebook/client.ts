@@ -2,7 +2,7 @@
  * Notebook UI transport. The same UI runs in two hosts:
  *  - the private Site page, which POSTs to /api/notebooks (same origin);
  *  - the ChatGPT MCP Apps iframe, which calls tools through the host bridge.
- * Behaviour mirrors the legacy editor: 55 s requests, up to 240 s for artifact
+ * Allocation POST allows two hours plus overhead; other requests use 55 s, up to 240 s for artifact
  * checkpoints, fixed error codes, and only parent-window JSON-RPC messages.
  */
 import type { NotebookToolName, ToolArgs } from "./contract.ts";
@@ -17,9 +17,12 @@ export interface NotebookClient {
   dispose(): void;
 }
 
+import { OPEN_CLIENT_REQUEST_MS } from "./allocation-budget.ts";
+
 export const REQUEST_TIMEOUT_MS = 55_000;
 export const ARTIFACT_REQUEST_TIMEOUT_MS = 240_000;
 export function requestTimeoutMs(name: string): number {
+  if (name === "open_notebook") return OPEN_CLIENT_REQUEST_MS;
   return ["get_notebook", "get_artifacts", "close_notebook", "maintain_notebooks"].includes(name)
     ? ARTIFACT_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }

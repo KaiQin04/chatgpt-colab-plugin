@@ -18,7 +18,7 @@ test("typecheck generates a missing UI module and rebuilds changed sources in an
     mkdirSync(join(fixture, "scripts"));
     cpSync(join(root, "scripts/build-notebook-ui.mjs"), join(fixture, "scripts/build-notebook-ui.mjs"));
     mkdirSync(join(fixture, "lib/notebook"), { recursive: true });
-    for (const name of ["client", "contract", "png", "types"]) {
+    for (const name of ["client", "contract", "png", "types", "allocation-budget"]) {
       cpSync(join(root, `lib/notebook/${name}.ts`), join(fixture, `lib/notebook/${name}.ts`));
     }
     symlinkSync(join(root, "node_modules"), join(fixture, "node_modules"), "junction");

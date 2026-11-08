@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createBridgeClient, createFetchClient, MCP_APPS_PROTOCOL, requestTimeoutMs } from "../lib/notebook/client.ts";
+import { ALLOCATION_WAIT_MS, OPEN_CLIENT_REQUEST_MS, OPEN_REQUEST_MS } from "../lib/notebook/allocation-budget.ts";
 import { artifactVerificationMs } from "../lib/notebook/policy.ts";
 import type { BridgeHost } from "../lib/notebook/client.ts";
 
-test("only artifact checkpoints allow long verification; compute operations keep their short budgets", () => {
+test("allocation waits two hours; artifact checkpoints and other operations retain their budgets", () => {
+  assert.equal(ALLOCATION_WAIT_MS, 7_200_000);
+  assert.ok(OPEN_REQUEST_MS > ALLOCATION_WAIT_MS);
+  assert.ok(OPEN_CLIENT_REQUEST_MS > OPEN_REQUEST_MS);
+  assert.equal(requestTimeoutMs("open_notebook"), OPEN_CLIENT_REQUEST_MS);
   assert.equal(artifactVerificationMs(1024 ** 3), 20_000);
   assert.equal(artifactVerificationMs(1024 ** 3 + 1), 40_000);
   assert.equal(artifactVerificationMs(10 * 1024 ** 3), 200_000);
   for (const name of ["get_notebook", "get_artifacts", "close_notebook", "maintain_notebooks"]) {
     assert.ok(requestTimeoutMs(name) > artifactVerificationMs(10 * 1024 ** 3) + 30_000);
   }
-  for (const name of ["open_notebook", "run_cell", "prepare_runtime", "import_file"]) {
+  for (const name of ["run_cell", "prepare_runtime", "import_file"]) {
     assert.equal(requestTimeoutMs(name), 55_000);
   }
 });

@@ -20,6 +20,8 @@ import type { SetupResult, SetupRow } from "./setup.ts";
 import { setupWrapper } from "./setup-wrapper.ts";
 import { base64PngWithinLimits } from "./png.ts";
 
+import { ALLOCATION_WAIT_MS } from "./allocation-budget.ts";
+
 const AGENT = "colab-compute-mcp";
 interface Socket extends EventTarget { accept(): void; send(value: string): void; close(code?: number, reason?: string): void }
 
@@ -109,18 +111,21 @@ export class NotebookRuntime {
     const params = { nbh: hash.replace(/-/g, "_").padEnd(44, "."),
       variant: choice.kind === "CPU" ? "DEFAULT" : "GPU",
       ...(choice.kind === "GPU" ? { accelerator: choice.accelerator } : {}) };
+    const allocationDeadline = performance.now() + ALLOCATION_WAIT_MS;
     attempt(true);
-    let assignment = await boundedStep("notebookAssignGet", 8000, signal,
-      (stepSignal) => this.client.request("GET", "/tun/m/assign", "notebookAssignGet", { params, signal: stepSignal, timeoutMs: 8000 }));
+    let assignment = await boundedStep("notebookAssignGet", ALLOCATION_WAIT_MS, signal,
+      (stepSignal) => this.client.request("GET", "/tun/m/assign", "notebookAssignGet", { params, signal: stepSignal, timeoutMs: ALLOCATION_WAIT_MS }));
     if (!("endpoint" in assignment)) {
       attempt(false);
       if (typeof assignment.token !== "string" || !assignment.token) throw new SpikeError("assign_challenge_invalid", "open");
       requireActive(signal, "notebookAssignPost");
+      const postBudgetMs = Math.ceil(allocationDeadline - performance.now());
+      if (postBudgetMs <= 0) throw new SpikeError("operation_deadline_exceeded", "notebookAssignPost");
       attempt(true);
       try {
-        assignment = await boundedStep("notebookAssignPost", 8000, signal,
+        assignment = await boundedStep("notebookAssignPost", postBudgetMs, signal,
           (stepSignal) => this.client.request("POST", "/tun/m/assign", "notebookAssignPost", {
-            params, signal: stepSignal, timeoutMs: 8000, xsrf: assignment.token as string,
+            params, signal: stepSignal, timeoutMs: postBudgetMs, xsrf: assignment.token as string,
           }));
       } catch (error) {
         // The Python reference identifies this exact status as refused assignment.

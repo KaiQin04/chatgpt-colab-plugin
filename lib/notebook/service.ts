@@ -22,6 +22,8 @@ import type { ArtifactView, CellView, DocumentView, MachineDownloadView, Noteboo
 import { runMaintenance } from "./maintenance.ts";
 import { computeNotebookView, runtimeView, runView } from "./views.ts";
 
+import { OPEN_REQUEST_MS } from "./allocation-budget.ts";
+
 type RuntimeOps = Pick<NotebookRuntime, "computeStatus" | "allocate" | "startKernel" | "submit" | "poll" | "submitInput" | "pollInput" | "submitSetup" | "pollSetup" | "interrupt" | "release" | "readArtifact"> & Partial<Pick<NotebookRuntime, "readArtifactRange">>;
 export interface ServiceOptions {
   fetcher?: Fetcher; signal?: AbortSignal; actor?: "user" | "assistant";
@@ -40,10 +42,11 @@ class NotebookService {
   bridge?: RuntimeOps;
   presenceSnapshot?: Promise<{ info: Omit<Awaited<ReturnType<RuntimeOps["computeStatus"]>>, "assignmentEndpoints">;
     endpoints: string[]; observedAt: number; startedAt: number }>;
-  constructor(readonly env: SpikeEnv, readonly ownerId: string, readonly options: ServiceOptions) {
+  constructor(readonly env: SpikeEnv, readonly ownerId: string, readonly options: ServiceOptions, requestBudgetMs = SHORT_REQUEST_MS) {
     this.store = new NotebookStore(env, ownerId);
     this.fetcher = options.fetcher ?? fetch;
-    this.timer = setTimeout(this.abort, SHORT_REQUEST_MS);
+    this.deadline = this.started + requestBudgetMs;
+    this.timer = setTimeout(this.abort, requestBudgetMs);
     options.signal?.addEventListener("abort", this.abort, { once: true });
     if (options.signal?.aborted) this.abort();
   }
@@ -66,7 +69,9 @@ class NotebookService {
       const token = await this.step("notebookGoogleToken", (signal) => accessToken(
         this.env, this.ownerId, this.fetcher, signal, { storageTimeoutMs: 2000 },
       ), 10_000);
-      const client = new ColabClient(token, this.fetcher);
+      const client = new ColabClient(token, this.fetcher, {}, (signal) =>
+        boundedStep("notebookGoogleTokenRefresh", 10_000, signal, (refreshSignal) =>
+          accessToken(this.env, this.ownerId, this.fetcher, refreshSignal, { storageTimeoutMs: 2000 })));
       this.bridge = this.options.runtimeFactory?.(client, this.fetcher) ?? new NotebookRuntime(client, this.fetcher);
     }
     return this.bridge;
@@ -636,7 +641,7 @@ class NotebookService {
 
 export async function notebookCall(name: string, args: Record<string, unknown>, env: SpikeEnv,
   identity: Identity, options: ServiceOptions = {}): Promise<Record<string, unknown>> {
-  const service = new NotebookService(env, identity.userId, options);
+  const service = new NotebookService(env, identity.userId, options, name === "open_notebook" ? OPEN_REQUEST_MS : SHORT_REQUEST_MS);
   try {
     await service.step("notebookOwner", async () => new Store(env).owner(identity));
     switch (name) {

@@ -354,3 +354,116 @@ test("largest cell (16,000 CJK characters) builds wrappers under a small stack a
   assert.equal(child.status, 0, child.stderr.split("\n").find((line) => /Error/.test(line)) ?? child.stderr);
   assert.match(child.stdout, /^ok \d+/);
 });
+
+test("allocation POST survives old 8s/30s/55s cutoffs and expires at two hours without resend", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let posts = 0;
+  let postSignal: AbortSignal | undefined;
+  const fetcher: Fetcher = async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/tun/m/assignments") return json({ assignments: [] });
+    if (init.method === "GET") return json({ token: "synthetic-challenge" });
+    posts++; postSignal = init.signal as AbortSignal;
+    return new Promise((_resolve, reject) => postSignal!.addEventListener("abort", () => reject(new Error("aborted"))));
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  const attempts: boolean[] = [];
+  let settled = false;
+  const pending = runtime.allocate("synthetic-hash", new AbortController().signal,
+    async () => assert.fail("No endpoint received"), value => attempts.push(value));
+  const checked = assert.rejects(pending, /step_timeout/).then(() => { settled = true; });
+  await setImmediate();
+  assert.equal(posts, 1);
+  t.mock.timers.tick(55_001); await setImmediate();
+  assert.equal(settled, false); assert.equal(postSignal!.aborted, false);
+  t.mock.timers.tick(7_200_000 - 55_001 - 1_000); await setImmediate();
+  assert.equal(settled, false);
+  t.mock.timers.tick(1_000); await checked;
+  assert.equal(postSignal!.aborted, true);
+  assert.equal(posts, 1);
+  assert.deepEqual(attempts, [true, false, true], "ambiguous POST retains the unknown lock");
+});
+
+test("allocation POST still honors external cancellation without retry", async () => {
+  const parent = new AbortController();
+  let posts = 0;
+  const fetcher: Fetcher = async (input, init = {}) => {
+    if (new URL(String(input)).pathname === "/tun/m/assignments") return json({ assignments: [] });
+    if (init.method === "GET") return json({ token: "synthetic-challenge" });
+    posts++; parent.abort(); throw new Error("cancelled");
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  await assert.rejects(runtime.allocate("synthetic-hash", parent.signal, async () => {}), /operation_deadline_exceeded/);
+  assert.equal(posts, 1);
+});
+
+test("long allocation refreshes existing access before verification and cleanup, never replays POST", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+  let posts = 0, refreshes = 0, reads = 0;
+  const fetcher: Fetcher = async (input, init = {}) => {
+    const url = new URL(String(input));
+    const auth = new Headers(init.headers).get("Authorization");
+    if (url.pathname === "/tun/m/assignments") {
+      reads++;
+      assert.equal(auth, reads === 1 ? `Bearer ${ACCESS}` : "Bearer synthetic-refreshed");
+      return json({ assignments: reads === 1 || reads >= 3 ? [] : [{ endpoint: "owned-late", variant: "DEFAULT", accelerator: "NONE" }] });
+    }
+    if (url.pathname.startsWith("/tun/m/unassign/")) {
+      assert.equal(auth, "Bearer synthetic-refreshed");
+      return json(init.method === "GET" ? { token: "synthetic-release" } : {});
+    }
+    if (init.method === "GET") return json({ token: "synthetic-challenge" });
+    posts++; t.mock.timers.tick(61 * 60 * 1000);
+    return json({ endpoint: "owned-late" });
+  };
+  const client = new ColabClient(ACCESS, fetcher, {}, async () => { refreshes++; return "synthetic-refreshed"; });
+  const runtime = new NotebookRuntime(client, fetcher);
+  let owned = "";
+  const actual = await runtime.allocate("synthetic-hash", new AbortController().signal, async endpoint => { owned = endpoint; });
+  assert.equal(actual.kind, "CPU"); assert.equal(refreshes, 1); assert.equal(posts, 1);
+  const released = await runtime.release({ ...row, endpoint: owned });
+  assert.equal(released.released, true); assert.equal(posts, 1);
+});
+
+test("failed token refresh preserves captured endpoint and does not retry allocation", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+  let posts = 0, owned = "";
+  const fetcher: Fetcher = async (input, init = {}) => {
+    if (new URL(String(input)).pathname === "/tun/m/assignments") return json({ assignments: [] });
+    if (init.method === "GET") return json({ token: "synthetic-challenge" });
+    posts++; t.mock.timers.tick(61 * 60 * 1000); return json({ endpoint: "owned-late" });
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher, {}, async () => { throw new Error("refresh_failed"); }), fetcher);
+  await assert.rejects(runtime.allocate("synthetic-hash", new AbortController().signal, async endpoint => { owned = endpoint; }), /refresh_failed/);
+  assert.equal(owned, "owned-late"); assert.equal(posts, 1);
+  const cleanup = await runtime.release({ ...row, endpoint: owned });
+  assert.equal(cleanup.released, false); assert.equal(posts, 1);
+});
+
+test("allocation GET has no 8-second cutoff and POST uses only the remaining two-hour budget", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let elapsed = 0;
+  t.mock.method(performance, "now", () => elapsed);
+  let resolveGet!: (response: Response) => void;
+  let posts = 0;
+  let postSignal: AbortSignal | undefined;
+  const fetcher: Fetcher = async (input, init = {}) => {
+    if (new URL(String(input)).pathname === "/tun/m/assignments") return json({ assignments: [] });
+    if (init.method === "GET") return new Promise(resolve => { resolveGet = resolve; });
+    posts++; postSignal = init.signal as AbortSignal;
+    return new Promise((_resolve, reject) => postSignal!.addEventListener("abort", () => reject(new Error("aborted"))));
+  };
+  const runtime = new NotebookRuntime(new ColabClient(ACCESS, fetcher), fetcher);
+  let settled = false;
+  const pending = runtime.allocate("synthetic-hash", new AbortController().signal, async () => assert.fail("No endpoint"));
+  const checked = assert.rejects(pending, /step_timeout/).then(() => { settled = true; });
+  await setImmediate();
+  elapsed = 60_000; t.mock.timers.tick(elapsed); await setImmediate();
+  assert.equal(settled, false); assert.equal(posts, 0);
+  resolveGet(json({ token: "synthetic-challenge" })); await setImmediate();
+  assert.equal(posts, 1);
+  t.mock.timers.tick(7_200_000 - elapsed - 1); await setImmediate();
+  assert.equal(settled, false); assert.equal(postSignal!.aborted, false);
+  t.mock.timers.tick(1); await checked;
+  assert.equal(posts, 1); assert.equal(postSignal!.aborted, true);
+});
