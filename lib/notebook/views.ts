@@ -20,6 +20,7 @@ export function runtimeView(row: RuntimeRow | null): RuntimeView | null {
     requestedCompute: row.requested_compute, selectedAccelerator: row.selected_accelerator,
     machineKind: row.machine_kind, accelerator: row.compute_verified === 1 ? row.accelerator : null,
     computeVerified: row.compute_verified === 1,
+    ...(row.allocation_failed === 1 ? { allocationFailed: true as const } : {}),
     createdAt: row.created_at, error: row.error_json ? JSON.parse(row.error_json) : null,
     ...(row.state === "unknown" && row.endpoint ? { recoveryEndpoint: row.endpoint } : {}) } : null;
 }

@@ -6,6 +6,8 @@
 
 長時間等待後，後續 verification／cleanup 會使用既有 refresh grant 更新逾 30 分鐘的 access token；不改 scope、授權或密鑰，不因 401 重送 allocation。
 
-若回應結果不明，可用 get_notebook 或 get_compute_status 查看原 notebook。以相同的 notebookId、compute 與 idempotencyKey 重試，會讀回既有配置；改用新的 notebookId 與 idempotencyKey，則會獨立配置另一本 notebook，即使原配置狀態為 unknown 也不受影響。原紀錄會持續反映已觀察到的狀態，不會因開啟新機或等待兩小時而自動標記為已釋放。既有的讀取與 maintenance 作業本身不會提交新的配置 POST。
+若配置 POST 在取得 runtime endpoint 前回傳 HTTP 503，該 Notebook 的開機嘗試會結束，狀態回到 closed。如需重新開機，請使用新的 idempotencyKey；若使用相同 key，則會讀回原本的結果。這類失敗紀錄會與已開機及未確認的 runtime 分開計數，並保留診斷資料。結束開機嘗試不代表 Google 已確認釋放 runtime。
+
+其他回應結果不明時，可用 get_notebook 或 get_compute_status 查看原 notebook。以相同的 notebookId、compute 與 idempotencyKey 重試，會讀回既有配置；改用新的 notebookId 與 idempotencyKey，則會獨立配置另一本 notebook，即使原配置狀態為 unknown 也不受影響。原紀錄會持續反映已觀察到的狀態，不會因開啟新機或等待兩小時而自動標記為已釋放。既有的讀取與 maintenance 作業本身不會提交新的配置 POST。
 
 測試使用虛擬計時驗證兩小時邊界、取消、不重送與長等待後 token 更新；不是兩小時實際 HTTP 或實體 G4/H100 配置證明。

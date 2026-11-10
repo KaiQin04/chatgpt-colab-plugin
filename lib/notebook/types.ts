@@ -61,6 +61,7 @@ export interface RuntimeRow {
   id: string; notebook_id: string; owner_id: string; request_key: string;
   state: RuntimeState; notebook_hash: string; endpoint: string | null;
   kernel_id: string | null; error_json: string | null; released: number;
+  allocation_failed: number;
   created_at: number; updated_at: number;
   accelerator: string;
   requested_compute: string; selected_accelerator: string | null;

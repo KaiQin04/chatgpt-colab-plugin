@@ -304,6 +304,8 @@ class NotebookService {
       () => this.store.computePage())).slice(0, 30).map((row) => computeNotebookView(row, this.now())); }
     catch { /* The allocation error and retained ledger take precedence over optional status. */ }
     return { ok: false, cached: false, notebookId: runtime.notebook_id, error, released,
+      ...(!owned && error?.stage === "notebookAssignPost" && error.httpStatus === 503
+        ? { notebookState: "closed", reopenAllowed: true } : {}),
       ...(currentNotebooks ? { currentNotebooks, currentNotebooksTruncated: currentNotebooks.length === 30 } : {}),
       ...(cleanup ? { cleanup } : {}), ...(owned && !released ? { recoveryEndpoint: owned } : {}),
       ...(mayExist && !owned ? { allocationOutcomeUnknown: true } : {}) };
@@ -361,7 +363,8 @@ class NotebookService {
     const counts = await this.step("notebookPresenceCount", () => this.store.presenceCounts(snapshot?.endpoints ?? [], snapshot?.startedAt ?? 0));
     const safe = { notebooks: page.slice(0, 30).map((row) => computeNotebookView(row, this.now())),
       ownerRuntimeCount: snapshot ? counts.confirmed : null,
-      ownerRuntimeUnknownCount: counts.retained - (snapshot ? counts.confirmed : 0),
+      ownerRuntimeUnknownCount: counts.retained - counts.failedAllocations - (snapshot ? counts.confirmed : 0),
+      ...(counts.failedAllocations ? { failedAllocationCount: counts.failedAllocations } : {}),
       retainedRuntimeCount: counts.retained, runtimePresence: snapshot ? "confirmed" : "unknown",
       runtimePresenceObservedAt: snapshot?.observedAt ?? null,
       ...(reconciliationWarning ? { reconciliationWarning } : {}), hasMore: page.length > 30,
@@ -488,7 +491,10 @@ class NotebookService {
     let before = await this.step("notebookCloseInput", () => this.store.notebook(args.notebookId as string));
     try { await this.reconcileNotebook(before); } catch { /* Preserve-close guards remain in force without provider evidence. */ }
     before = await this.step("notebookClosePresenceReadback", () => this.store.notebook(before.id));
-    if (before.state === "closed") return { released: true, cached: true, ...await this.document(before.id) };
+    if (before.state === "closed") {
+      const document = await this.document(before.id);
+      return { released: document.notebook.runtime?.released ?? true, cached: true, ...document };
+    }
     if (before.state === "opening" && await this.step("notebookCancelStaleOpen", (signal) => this.store.cancelStaleOpen(before, this.now(), signal))) {
       return { released: true, reservationCancelled: true, allocationNotStarted: true,
         releaseRequired: false, ...await this.document(before.id) };
@@ -644,6 +650,9 @@ export async function notebookCall(name: string, args: Record<string, unknown>, 
   const service = new NotebookService(env, identity.userId, options, name === "open_notebook" ? OPEN_REQUEST_MS : SHORT_REQUEST_MS);
   try {
     await service.step("notebookOwner", async () => new Store(env).owner(identity));
+    if (["open_notebook", "get_notebook", "get_compute_status", "maintain_notebooks"].includes(name)) {
+      await service.step("notebookFailedAllocationClosure", () => service.store.closeFailedAllocations());
+    }
     switch (name) {
       case "open_notebook": return await service.open(args);
       case "get_compute_status": return await service.compute(args);
@@ -673,5 +682,8 @@ export async function notebookCall(name: string, args: Record<string, unknown>, 
 /** Called only after the private service route resolves the already-enrolled owner. */
 export async function maintenanceCall(env: SpikeEnv, ownerId: string, options: ServiceOptions = {}): Promise<Record<string, unknown>> {
   const service = new NotebookService(env, ownerId, options);
-  try { return await service.maintenance(); } finally { service.dispose(); }
+  try {
+    await service.step("notebookFailedAllocationClosure", () => service.store.closeFailedAllocations());
+    return await service.maintenance();
+  } finally { service.dispose(); }
 }

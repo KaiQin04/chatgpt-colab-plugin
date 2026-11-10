@@ -16,7 +16,7 @@ const notebookId = "11111111-1111-4111-8111-111111111111";
 const runId = "22222222-2222-4222-8222-222222222222";
 const row: RuntimeRow = { id: crypto.randomUUID(), notebook_id: notebookId, notebook_hash: crypto.randomUUID(),
   owner_id: "synthetic-owner", request_key: "synthetic-key", state: "open", endpoint: "owned-endpoint",
-  kernel_id: "synthetic-kernel", created_at: 100, updated_at: 100, released: 0, error_json: null, accelerator: "CPU",
+  kernel_id: "synthetic-kernel", created_at: 100, updated_at: 100, released: 0, allocation_failed: 0, error_json: null, accelerator: "CPU",
   requested_compute: "CPU", selected_accelerator: "CPU", machine_kind: "CPU", compute_verified: 1 };
 const payload = { protocol: 1, runId, status: "ok", outputs: [{ output_type: "stream", name: "stdout", text: "42\n" }],
   startedAt: 100, finishedAt: 200, executionCount: 1, truncated: false };

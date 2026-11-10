@@ -27,6 +27,7 @@ export type RuntimeView = {
   requestedCompute: string; selectedAccelerator: string | null;
   machineKind: RuntimeRow["machine_kind"]; accelerator: string | null;
   computeVerified: boolean; createdAt: number; error: ErrorView | null;
+  allocationFailed?: true;
   recoveryEndpoint?: string;
 };
 

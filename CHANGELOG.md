@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.5 — 2026-11-10
+
+- If an allocation POST returns HTTP 503 before a runtime endpoint is captured, the notebook attempt is closed. To start again, use a new idempotencyKey. Reusing the same key returns the original result. The failed request is counted separately from running or unresolved runtimes. Its diagnostic record is retained, and closing the attempt does not confirm that Google released a runtime.
+- Reconcile existing matching records on notebook reads, compute status checks, opens and maintenance. Preserve concurrent-open protection and same-key idempotency.
+
+Apply migration `0013_glorious_the_hand.sql` using the existing Sites deployment workflow before running this version. See [the release notes](docs/releases/v0.3.5.md).
+
 ## 0.3.4 — 2026-11-10
 
 - Remove the global allocation lock left over from the retired feasibility probe.

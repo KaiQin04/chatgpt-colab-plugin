@@ -38,6 +38,7 @@ class FakeRuntime {
   value: RunResult | null = null;
   runId = "";
   failAllocate = false; failKernel = false; failObserved = false; unknownAck = false; failRelease = false;
+  allocationHttpStatus: number | undefined;
   failBeforeSend = false;
   onSubmit?: () => Promise<void>;
   onInterrupt?: () => Promise<void>;
@@ -70,6 +71,7 @@ class FakeRuntime {
     attempt: (value: boolean) => void, choice = CPU_COMPUTE): Promise<ObservedCompute> {
     this.allocations++; attempt(true);
     this.choices.push(choice);
+    if (this.allocationHttpStatus) throw new SpikeError("upstream_invalid_json", "notebookAssignPost", this.allocationHttpStatus);
     if (this.failAllocate) throw new SpikeError("transport_failed", "notebookAssignPost");
     await capture(this.allocations === 1 ? "synthetic-owned-endpoint" : `synthetic-owned-endpoint-${this.allocations}`);
     if (this.failObserved) throw new SpikeError("assignment_compute_mismatch", "open");
@@ -611,6 +613,105 @@ test("unknown allocation never reallocates; kernel failure releases only the cap
       if (kind === "allocation") await assert.rejects(f.call("open_notebook", { ...args, idempotencyKey: "different-failed-open" }), /runtime_slot_unavailable/);
     } finally { f.close(); }
   }
+});
+
+test("allocation POST 503 closes the notebook and a new key can immediately reopen it", async () => {
+  const f = await setup();
+  try {
+    await f.call("close_notebook", { notebookId });
+    f.remote.allocationHttpStatus = 503;
+    const args = { ...openArgs, compute: "A100", idempotencyKey: "allocation-503-failed" };
+    const failed = await f.call("open_notebook", args);
+    assert.equal((await f.store.notebook(notebookId)).state, "closed");
+    assert.equal(failed.notebookState, "closed");
+    assert.equal(failed.reopenAllowed, true);
+    assert.equal(failed.released, false);
+    const status = await f.call("get_compute_status", {});
+    assert.equal(status.ownerRuntimeUnknownCount, 0);
+    assert.equal(status.failedAllocationCount, 1);
+    assert.equal((status.notebooks as any[]).length, 0);
+    const previous = await f.store.runtime((await f.store.notebook(notebookId)).runtime_id!);
+    assert.equal(previous.state, "unknown");
+    assert.equal(previous.released, 0, "503 does not prove provider release");
+    const closed = await f.call("close_notebook", { notebookId });
+    assert.equal(closed.released, false);
+    assert.equal(closed.cached, true);
+    const requests = f.remote.allocations;
+    assert.equal((await f.call("open_notebook", args)).cached, true);
+    assert.equal(f.remote.allocations, requests);
+    f.remote.allocationHttpStatus = undefined;
+    const retries = await Promise.allSettled(["allocation-503-reopen-one", "allocation-503-reopen-two"]
+      .map(idempotencyKey => f.call("open_notebook", { ...args, idempotencyKey })));
+    const completed = retries.filter((value): value is PromiseFulfilledResult<Record<string, unknown>> => value.status === "fulfilled");
+    assert.equal(completed.length, 1, "concurrent keys reserve only one current runtime");
+    assert.equal(retries.filter(value => value.status === "rejected").length, 1);
+    const reopened = completed[0].value;
+    assert.equal((reopened.notebook as any).state, "open");
+    assert.notEqual((await f.store.notebook(notebookId)).runtime_id, previous.id);
+    assert.deepEqual(await f.store.runtime(previous.id), previous);
+    await f.store.finishRuntime(previous.id, false, { code: "upstream_http_error", stage: "notebookAssignPost", httpStatus: 503 });
+    assert.equal((await f.store.notebook(notebookId)).state, "open", "a late failure cannot close the replacement");
+  } finally { f.close(); }
+});
+
+test("legacy allocation 503 records close on read without releasing an endpoint or changing another owner", async () => {
+  const f = await setup();
+  try {
+    const error = { code: "upstream_invalid_json", stage: "notebookAssignPost", httpStatus: 503 };
+    const { runtime } = await f.store.reserveOpen(otherId, "Legacy failed allocation", "legacy-503-open", "A100");
+    await f.store.finishRuntime(runtime.id, false, error);
+    f.sqlite.prepare("UPDATE notebook_runtimes SET allocation_failed=0 WHERE id=?").run(runtime.id);
+    f.sqlite.prepare("UPDATE notebooks SET state='unknown' WHERE id=?").run(otherId);
+    const before = await f.store.runtime(runtime.id);
+    const foreignId = crypto.randomUUID();
+    const foreign = new NotebookStore(f.env, OTHER.userId);
+    const { runtime: otherRuntime } = await foreign.reserveOpen(foreignId, "Other owner", "foreign-503-open");
+    await foreign.finishRuntime(otherRuntime.id, false, error);
+    f.sqlite.prepare("UPDATE notebooks SET state='unknown' WHERE id=?").run(foreignId);
+    const response = await f.call("get_notebook", { notebookId: otherId });
+    assert.equal((response.notebook as any).state, "closed");
+    assert.deepEqual(await f.store.runtime(runtime.id), { ...before, allocation_failed: 1 });
+    assert.equal((await foreign.notebook(foreignId)).state, "unknown");
+    assert.equal(f.remote.releases, 0);
+    assert.equal((await f.store.notebook(notebookId)).state, "open");
+  } finally { f.close(); }
+});
+
+test("503 closure excludes captured runtimes, active work and other error stages", async () => {
+  const f = fixture();
+  const store = new NotebookStore(f.env, OWNER.userId);
+  try {
+    const cases = [
+      { stage: "notebookAssignPost", status: 503 },
+      { stage: "notebookAssignPost", status: 503, endpoint: "captured-runtime" },
+      { stage: "notebookAssignPost", status: 503, kernel_id: "kernel" },
+      { stage: "notebookAssignPost", status: 503, compute_verified: 1 },
+      { stage: "notebookAssignPost", status: 503, active_run_id: "pending-run" },
+      { stage: "notebookAssignPost", status: 503, active_input_id: "pending-input" },
+      { stage: "notebookAssignPost", status: 503, active_setup_id: "pending-setup" },
+      { stage: "notebookAssignPost", status: 503, control_token: "pending-control" },
+      { stage: "notebookAssignGet", status: 503 },
+      { stage: "notebookKernelStart", status: 503 },
+      { stage: "notebookAssignPost", status: 504 },
+    ];
+    const ids: string[] = [];
+    for (const [index, value] of cases.entries()) {
+      const id = crypto.randomUUID(); ids.push(id);
+      const { runtime } = await store.reserveOpen(id, "Synthetic allocation", `503-closure-${index}`);
+      for (const column of ["endpoint", "kernel_id", "compute_verified"] as const) {
+        if (column in value) f.sqlite.prepare(`UPDATE notebook_runtimes SET ${column}=? WHERE id=?`)
+          .run(value[column]!, runtime.id);
+      }
+      for (const column of ["active_run_id", "active_input_id", "active_setup_id", "control_token"] as const) {
+        if (column in value) f.sqlite.prepare(`UPDATE notebooks SET ${column}=? WHERE id=?`).run(value[column]!, id);
+      }
+      await store.finishRuntime(runtime.id, false, { code: "upstream_http_error", stage: value.stage, httpStatus: value.status });
+      f.sqlite.prepare("UPDATE notebooks SET state='unknown' WHERE id=?").run(id);
+    }
+    await store.closeFailedAllocations();
+    assert.equal((await store.notebook(ids[0])).state, "closed");
+    for (const id of ids.slice(1)) assert.equal((await store.notebook(id)).state, "unknown");
+  } finally { f.close(); }
 });
 
 test("late reservation completion cannot allocate and close recovers only its expired pre-allocation record", async (t) => {

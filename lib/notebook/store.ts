@@ -45,15 +45,17 @@ export class NotebookStore {
   }
   async presenceRuntimes(afterId = ""): Promise<RuntimeRow[]> {
     return (await this.db.prepare(`SELECT r.* FROM notebook_runtimes r JOIN notebooks n ON n.runtime_id=r.id
-      AND n.owner_id=r.owner_id WHERE r.owner_id=? AND r.released=0 AND n.id>? ORDER BY n.id LIMIT 30`)
+      AND n.owner_id=r.owner_id WHERE r.owner_id=? AND r.released=0 AND r.allocation_failed=0 AND n.id>? ORDER BY n.id LIMIT 30`)
       .bind(this.ownerId, afterId).all<RuntimeRow>()).results;
   }
-  async presenceCounts(endpoints: string[], observedAt: number): Promise<{ retained: number; confirmed: number }> {
-    return (await this.db.prepare(`SELECT COUNT(*) AS retained,COALESCE(SUM(CASE WHEN r.state<>'opening'
+  async presenceCounts(endpoints: string[], observedAt: number): Promise<{ retained: number; confirmed: number; failedAllocations: number }> {
+    return (await this.db.prepare(`SELECT COUNT(*) AS retained,
+      COALESCE(SUM(CASE WHEN r.allocation_failed=1 THEN 1 ELSE 0 END),0) AS failedAllocations,
+      COALESCE(SUM(CASE WHEN r.state<>'opening' AND r.allocation_failed=0
       AND r.created_at<=? AND r.endpoint IN (SELECT value FROM json_each(?)) THEN 1 ELSE 0 END),0) AS confirmed
       FROM notebook_runtimes r JOIN notebooks n ON n.runtime_id=r.id AND n.owner_id=r.owner_id
       WHERE r.owner_id=? AND r.released=0`).bind(observedAt, JSON.stringify(endpoints), this.ownerId)
-      .first<{ retained: number; confirmed: number }>())!;
+      .first<{ retained: number; confirmed: number; failedAllocations: number }>())!;
   }
   async observeRuntime(runtime: RuntimeRow, present: boolean, observedAt: number, startedAt = observedAt): Promise<RuntimeRow> {
     await this.db.prepare(`UPDATE notebook_runtimes SET assignment_missing_since=CASE WHEN ?=1 THEN NULL
@@ -132,6 +134,27 @@ export class NotebookStore {
   async openByKey(key: string): Promise<RuntimeRow | null> {
     return this.db.prepare("SELECT * FROM notebook_runtimes WHERE owner_id=? AND request_key=?")
       .bind(this.ownerId, key).first<RuntimeRow>();
+  }
+  /** Close failed notebook attempts without claiming Google released a runtime. */
+  private failedAllocationClosures(runtimeId?: string): D1PreparedStatement[] {
+    const failed = `SELECT r.id FROM notebook_runtimes r JOIN notebooks n
+      ON r.id=n.runtime_id AND r.notebook_id=n.id AND r.owner_id=n.owner_id
+      WHERE n.owner_id=? AND n.state='unknown'
+      AND n.active_run_id IS NULL AND n.active_input_id IS NULL AND n.active_setup_id IS NULL AND n.control_token IS NULL
+        AND r.state='unknown' AND r.released=0 AND r.endpoint IS NULL AND r.kernel_id IS NULL AND r.compute_verified=0
+        AND CASE WHEN json_valid(r.error_json) THEN
+          json_extract(r.error_json,'$.stage')='notebookAssignPost' AND json_extract(r.error_json,'$.httpStatus')=503
+          ELSE 0 END ${runtimeId ? "AND r.id=?" : ""}`;
+    const values = [this.ownerId, ...(runtimeId ? [runtimeId] : [])];
+    return [
+      this.db.prepare(`UPDATE notebook_runtimes SET allocation_failed=1 WHERE id IN (${failed})`).bind(...values),
+      this.db.prepare(`UPDATE notebooks SET state='closed',updated_at=? WHERE owner_id=? AND runtime_id IN (${failed})`)
+        .bind(Date.now(), this.ownerId, ...values),
+    ];
+  }
+  /** Apply the retryable failure policy to existing owner records too. */
+  async closeFailedAllocations(): Promise<void> {
+    await this.db.batch(this.failedAllocationClosures());
   }
   async reserveOpen(id: string, title: string, key: string, compute = "CPU", signal?: AbortSignal): Promise<{ runtime: RuntimeRow; cached: boolean }> {
     const checkRetry = (row: RuntimeRow) => {
@@ -239,6 +262,8 @@ export class NotebookStore {
         FROM notebook_runtimes WHERE id=?),updated_at=? WHERE runtime_id=? AND owner_id=? AND state NOT IN ('closed','deleting')
         ${absence ? "AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=notebooks.runtime_id AND released=1)" : ""}`)
         .bind(runtimeId, now, runtimeId, this.ownerId),
+      ...(error?.stage === "notebookAssignPost" && error.httpStatus === 503
+        ? this.failedAllocationClosures(runtimeId) : []),
       this.db.prepare(`UPDATE notebook_runs SET state='incomplete',error_json=?,updated_at=?,terminal_at=COALESCE(terminal_at,?)
         WHERE runtime_id=? AND state NOT IN ('ok','error','interrupted','incomplete')
         AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=? AND released=1 AND owner_id=?)`)

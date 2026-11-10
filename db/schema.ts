@@ -82,6 +82,7 @@ export const notebookRuntimes = sqliteTable("notebook_runtimes", {
   requestKey: text("request_key").notNull(), state: text("state").notNull(),
   notebookHash: text("notebook_hash").notNull(), endpoint: text("endpoint"), kernelId: text("kernel_id"),
   errorJson: text("error_json"), released: integer("released").notNull().default(0),
+  allocationFailed: integer("allocation_failed").notNull().default(0),
   accelerator: text("accelerator").notNull().default("CPU"),
   requestedCompute: text("requested_compute").notNull().default("CPU"),
   selectedAccelerator: text("selected_accelerator"),
@@ -91,7 +92,7 @@ export const notebookRuntimes = sqliteTable("notebook_runtimes", {
   assignmentMissingSince: integer("assignment_missing_since"),
   createdAt: integer("created_at").notNull(), updatedAt: integer("updated_at").notNull(),
 }, (table) => [uniqueIndex("notebook_open_idempotency").on(table.ownerId, table.requestKey),
-  uniqueIndex("notebook_live_runtime").on(table.notebookId).where(sql`${table.released}=0`),
+  uniqueIndex("notebook_live_runtime").on(table.notebookId).where(sql`${table.released}=0 AND ${table.allocationFailed}=0`),
   index("notebook_runtime_ownership").on(table.ownerId, table.released)]);
 export const notebookRuns = sqliteTable("notebook_runs", {
   id: text("id").primaryKey(), notebookId: text("notebook_id").notNull(), runtimeId: text("runtime_id").notNull(),
