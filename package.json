@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-colab-plugin",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "private": true,
   "engines": {
     "node": ">=22.13.0"

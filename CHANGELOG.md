@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.4 — 2026-11-10
+
+- Remove the global allocation lock left over from the retired feasibility probe.
+- Revise tool descriptions to document API behavior accurately. They no longer tell agents to avoid further allocation attempts or replacement notebooks while another notebook's allocation is unknown. Distinct notebooks already allocate independently. Unknown allocation records remain tracked, and a repeated request key still identifies the original attempt, so retries remain idempotent.
+- Include two changes made since v0.3.3: a shared two-hour budget for allocation GET and POST requests, and access-token refresh support.
+- Add regression tests for:
+  - opening two replacement notebooks while an earlier allocation is unknown.
+  - allocating when a retired-probe record is still present.
+
+No database migration is required. To update an existing installation, apply and deploy this release to your own Site.
+
 ## 0.3.1 — 2026-10-25
 
 - Patch Next.js, React Server Components (including the Vite RSC plugin's vendored copy), Vinext, Vite, Cloudflare build tooling, DOMPurify, Zod and affected transitive dependencies. Both npm lockfiles have no known vulnerabilities in the release-time npm audit.

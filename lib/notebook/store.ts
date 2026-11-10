@@ -154,8 +154,7 @@ export class NotebookStore {
           .bind(id, this.ownerId, title, now, now),
         this.db.prepare(`INSERT INTO notebook_runtimes(id,notebook_id,owner_id,request_key,state,notebook_hash,released,created_at,updated_at,requested_compute,machine_kind,accelerator)
           SELECT ?,id,?,?, 'opening',?,0,?,?,?,?, 'UNKNOWN' FROM notebooks
-          WHERE id=? AND owner_id=? AND state='closed'
-          AND NOT EXISTS(SELECT 1 FROM operation_lock)`)
+          WHERE id=? AND owner_id=? AND state='closed'`)
           .bind(runtimeId, this.ownerId, key, hash, now, now, compute, compute === "CPU" ? "CPU" : "GPU", id, this.ownerId),
         this.db.prepare("UPDATE notebooks SET state='opening',runtime_id=?,updated_at=?,last_activity_at=? WHERE id=? AND owner_id=? AND EXISTS(SELECT 1 FROM notebook_runtimes WHERE id=?)")
           .bind(runtimeId, now, now, id, this.ownerId, runtimeId),

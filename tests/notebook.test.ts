@@ -766,17 +766,46 @@ test("ineligible GPU does not allocate; failed observed machine cleans up only i
   } finally { f.close(); }
 });
 
-test("a retained legacy operation lock still blocks new notebook allocation", async () => {
+test("a retired probe lock does not block independent notebook allocations", async () => {
   const f = fixture();
   try {
-    // The retired feasibility probe used this singleton lock; production D1 may still hold one.
     f.sqlite.prepare("INSERT INTO operation_lock(singleton, operation_id) VALUES(1, 'legacy-probe')").run();
     const store = new NotebookStore(f.env, OWNER.userId);
-    await assert.rejects(store.reserveOpen(notebookId, "Synthetic race", "synthetic-open-race"));
-    assert.equal(Number(f.sqlite.prepare("SELECT COUNT(*) AS n FROM notebook_runtimes WHERE released=0").get()!.n), 0);
-    f.sqlite.prepare("DELETE FROM operation_lock").run();
-    await store.reserveOpen(notebookId, "Synthetic race", "synthetic-open-race");
-    assert.equal(Number(f.sqlite.prepare("SELECT COUNT(*) AS n FROM notebook_runtimes WHERE released=0").get()!.n), 1);
+    await Promise.all([
+      store.reserveOpen(notebookId, "First replacement", "synthetic-open-first"),
+      store.reserveOpen(otherId, "Second replacement", "synthetic-open-second"),
+    ]);
+    assert.equal(Number(f.sqlite.prepare("SELECT COUNT(*) AS n FROM notebook_runtimes WHERE released=0").get()!.n), 2);
+    assert.equal(f.sqlite.prepare("SELECT operation_id FROM operation_lock").get()!.operation_id, "legacy-probe");
+  } finally { f.close(); }
+});
+
+test("an unknown allocation does not block two fresh replacement notebooks", async () => {
+  const f = await setup();
+  try {
+    await f.call("close_notebook", { notebookId });
+    f.remote.failAllocate = true;
+    await f.call("open_notebook", { ...openArgs, idempotencyKey: "unknown-original-open" });
+    const original = await f.store.notebook(notebookId);
+    const runtime = await f.store.runtime(original.runtime_id!);
+    assert.equal(runtime.state, "unknown");
+    assert.equal(runtime.endpoint, null);
+    f.remote.failAllocate = false;
+    const replacements = [otherId, crypto.randomUUID()].map((id, index) => ({
+      notebookId: id, title: "Replacement notebook", compute: "L4",
+      idempotencyKey: `replacement-open-${index}`,
+    }));
+    for (const args of replacements) {
+      const opened = await f.call("open_notebook", args);
+      assert.equal((opened.notebook as Record<string, unknown>).state, "open");
+      assert.equal((await f.store.notebook(args.notebookId)).state, "open");
+    }
+    assert.equal(f.remote.allocations, 4);
+    assert.equal(f.remote.releases, 1);
+    assert.deepEqual(await f.store.notebook(notebookId), original);
+    assert.deepEqual(await f.store.runtime(original.runtime_id!), runtime);
+    assert.equal((await f.call("open_notebook", replacements[0])).cached, true);
+    assert.equal(f.remote.allocations, 4);
   } finally { f.close(); }
 });
 

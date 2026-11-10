@@ -14,7 +14,7 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 export const PANEL_TOOL = {
   name: "colab_spike_panel", title: "Colab Notebook",
   icons: PANEL_ICONS,
-  description: "Open the private notebook editor in the conversation or thread tab. Opening the panel only lists saved documents; CPU allocation requires the explicit Open CPU action.",
+  description: "Opens the private notebook editor in the conversation or thread tab and lists saved documents. Works alongside CPU and GPU notebooks. Opening the editor does not allocate compute; runtimes are opened through open_notebook or the editor's controls.",
   inputSchema: EMPTY_SCHEMA, annotations: READ_ONLY,
   _meta: {
     ui: { resourceUri: PANEL_URI },

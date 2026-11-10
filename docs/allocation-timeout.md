@@ -6,6 +6,6 @@
 
 長時間等待後，後續 verification／cleanup 會使用既有 refresh grant 更新逾 30 分鐘的 access token；不改 scope、授權或密鑰，不因 401 重送 allocation。
 
-若回應不明，使用 get_notebook／get_compute_status 查看原 notebook；相同 notebookId、compute、idempotencyKey 只讀既有 reservation。不以新 key 或新 notebook 繞過 unknown lock；即使等滿兩小時，沒有 endpoint 證據也不能宣稱釋放、接管或重新配置。既有讀取與 maintenance 不會重送配置 POST，也不將未知 endpoint 推測為本人資源。
+若回應結果不明，可用 get_notebook 或 get_compute_status 查看原 notebook。以相同的 notebookId、compute 與 idempotencyKey 重試，會讀回既有配置；改用新的 notebookId 與 idempotencyKey，則會獨立配置另一本 notebook，即使原配置狀態為 unknown 也不受影響。原紀錄會持續反映已觀察到的狀態，不會因開啟新機或等待兩小時而自動標記為已釋放。既有的讀取與 maintenance 作業本身不會提交新的配置 POST。
 
 測試使用虛擬計時驗證兩小時邊界、取消、不重送與長等待後 token 更新；不是兩小時實際 HTTP 或實體 G4/H100 配置證明。
